@@ -1,0 +1,42 @@
+{
+  "meta": { "pages_count": 2 },
+  "submission": {
+    "id": 101,
+    "title": "The &amp; Long Road",
+    "description": "A description &amp; more",
+    "category_info": { "type": "story", "pageUrl": "romance" },
+    "category": 15,
+    "language": 1,
+    "date_approve": "09/13/2020",
+    "rate_all": 4.5,
+    "view_count": 1200,
+    "url": "the-long-road",
+    "is_hot": true,
+    "is_new": false,
+    "writers_pick": false,
+    "contest_winner": true,
+    "enable_comments": true,
+    "allow_vote": true,
+    "author": { "userid": 902, "username": "AnneAuthor" },
+    "series": {
+      "meta": { "id": 55, "title": "The Long Road", "url": "the-long-road" },
+      "items": [
+        {
+          "id": 101,
+          "title": "The Long Road",
+          "url": "the-long-road",
+          "category": 15,
+          "category_info": { "pageUrl": "romance" }
+        },
+        {
+          "id": 102,
+          "title": "The Long Road II",
+          "url": "the-long-road-ii",
+          "category": 15,
+          "category_info": { "pageUrl": "romance" }
+        }
+      ]
+    }
+  },
+  "pageText": "The road began at dawn and stretched further than anyone could see.\r\n\r\nTravellers paused to trade stories before moving on.\r\n\r\nBy dusk the mountains had swallowed the last of the light.\r\n\r\nThe road, patient as ever, waited for morning."
+}

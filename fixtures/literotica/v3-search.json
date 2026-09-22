@@ -1,0 +1,25 @@
+{
+  "data": [
+    {
+      "id": 201,
+      "title": "Neon &amp; Rain",
+      "description": "A cyberpunk romance",
+      "category_info": { "name": "Sci-Fi &amp; Fantasy" },
+      "category": 7,
+      "language": 1,
+      "date_approve": "01/02/2021",
+      "rate_all": "4.2",
+      "view_count": 500,
+      "url": "neon-rain",
+      "is_hot": true,
+      "is_new": false,
+      "writers_pick": 1,
+      "contest_winner": 0,
+      "enable_comments": true,
+      "allow_vote": true,
+      "series": [],
+      "author": { "id": 902, "username": "Casey" }
+    }
+  ],
+  "meta": { "total": 1 }
+}

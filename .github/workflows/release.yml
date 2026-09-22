@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify
+        run: npm run verify
+
+      - name: Set Android version code
+        run: |
+          node -e "const fs=require('fs');const c=require('./app.json');c.expo.android.versionCode=Number(process.env.GITHUB_RUN_NUMBER||1);fs.writeFileSync('app.json',JSON.stringify(c,null,2)+'\n');"
+
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Decode signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not configured"; exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keystore.jks"
+
+      - name: Build release APK
+        run: cd android && ./gradlew assembleRelease --no-daemon
+
+      - name: Align and sign APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/keystore.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="dev"
+          fi
+          scripts/android/sign-apk.sh \
+            android/app/build/outputs/apk/release/app-release-unsigned.apk \
+            "master-reader-${version}.apk"
+          echo "APK=master-reader-${version}.apk" >> "$GITHUB_ENV"
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.APK }}
+          generate_release_notes: true
+
+      - name: Build self-hosted F-Droid repository
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FDROID_REPO_KEYSTORE_BASE64: ${{ secrets.FDROID_REPO_KEYSTORE_BASE64 }}
+          FDROID_KEYSTORE_PASSWORD: ${{ secrets.FDROID_KEYSTORE_PASSWORD }}
+          FDROID_KEY_ALIAS: ${{ secrets.FDROID_KEY_ALIAS }}
+          FDROID_KEY_PASSWORD: ${{ secrets.FDROID_KEY_PASSWORD }}
+          FDROID_REPO_URL: ${{ vars.FDROID_REPO_URL }}
+        run: |
+          if [ -z "$FDROID_REPO_KEYSTORE_BASE64" ] || [ -z "$FDROID_REPO_URL" ]; then
+            echo "F-Droid repository is not configured; skipping."
+            exit 0
+          fi
+          python3 -m pip install --user fdroidserver
+          echo "$FDROID_REPO_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/fdroid-repo.jks"
+          export FDROID_REPO_KEYSTORE="$RUNNER_TEMP/fdroid-repo.jks"
+          export PATH="$HOME/.local/bin:$PATH"
+          scripts/fdroid/build-repo.sh build/fdroid "${{ env.APK }}"
+          tar -czf "master-reader-fdroid-repo-${VERSION}.tar.gz" -C build/fdroid/repo .
+          gh release upload "$GITHUB_REF_NAME" "master-reader-fdroid-repo-${VERSION}.tar.gz" --clobber

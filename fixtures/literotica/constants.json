@@ -1,0 +1,10 @@
+{
+  "languages": {
+    "1": { "id": 1, "shortname": "en", "longname": "English", "domain": "english" },
+    "2": { "id": 2, "shortname": "es", "longname": "Spanish", "domain": null }
+  },
+  "categories": {
+    "5": { "id": 5, "name": "Romance" },
+    "6": { "id": "6", "name": "Drama" }
+  }
+}

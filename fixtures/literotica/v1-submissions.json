@@ -1,0 +1,37 @@
+{
+  "success": true,
+  "total": 2,
+  "submissions": [
+    {
+      "id": 101,
+      "name": "The &amp; Long Road",
+      "description": "A description &amp; more",
+      "category": { "id": 5, "name": "Romance" },
+      "lang": 1,
+      "timestamp_published": 1600000000,
+      "rate": 4.5,
+      "view_count": "1200",
+      "url": "the-long-road",
+      "is_hot": "yes",
+      "is_new": "no",
+      "writers_pick": 0,
+      "contest_winner": 1,
+      "enable_comments": 3,
+      "allow_vote": 1,
+      "user": { "id": 900, "username": "AnneAuthor" }
+    },
+    {
+      "id": "102",
+      "name": "Second Story",
+      "category": { "id": "6", "name": "Drama" },
+      "lang": "1",
+      "rate": "3.75",
+      "view_count": 42,
+      "url": "https://www.literotica.com/s/second-story",
+      "is_hot": "no",
+      "is_new": "yes",
+      "allow_vote": 0,
+      "user": { "id": 901, "name": "Bob" }
+    }
+  ]
+}

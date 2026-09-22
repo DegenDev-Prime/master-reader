@@ -1,0 +1,30 @@
+{
+  "data": [
+    {
+      "id": 3713133,
+      "title": "My Gay Test",
+      "description": "Guy creates a test to determine which friends are bi or gay.",
+      "authorname": "bogey4u",
+      "author": { "userid": 4035088, "username": "bogey4u" },
+      "category_info": { "type": "story", "pageUrl": "gay-sex-stories" },
+      "category": 6,
+      "comment_count": 3,
+      "contest_winner": 0,
+      "date_approve": "11/14/2024",
+      "enable_comments": 1,
+      "favorite_count": 14,
+      "is_hot": false,
+      "is_new": false,
+      "language": 1,
+      "rate_all": 4.42,
+      "rate_count": 147,
+      "series": [],
+      "tags": [],
+      "type": "story",
+      "url": "my-gay-test",
+      "view_count": 10529,
+      "words_count": 1851
+    }
+  ],
+  "meta": { "total": 1, "submissions_count": 1 }
+}

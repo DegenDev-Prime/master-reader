@@ -1,0 +1,268 @@
+{
+  "tabs": {
+    "library": "Library",
+    "browse": "Browse",
+    "search": "Search",
+    "history": "History",
+    "settings": "Settings"
+  },
+  "common": {
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "remove": "Remove",
+    "choose": "Choose",
+    "run": "Run",
+    "export": "Export",
+    "manage": "Manage",
+    "restore": "Restore",
+    "notSet": "Not set",
+    "install": "Install",
+    "open": "Open",
+    "all": "All"
+  },
+  "library": {
+    "count": "{{count}} stories",
+    "unread": "Unread",
+    "emptyTitle": "Your library is empty",
+    "emptyMessage": "Add stories from Browse or Search and they will show up here.",
+    "browse": "Browse stories"
+  },
+  "browse": {
+    "title": "Browse",
+    "subtitle": "Popular and new stories",
+    "popular": "Popular",
+    "latest": "Latest",
+    "loading": "Loading stories",
+    "categories": "Categories",
+    "allCategories": "All"
+  },
+  "search": {
+    "title": "Search",
+    "placeholder": "Title, author or keyword",
+    "action": "Search",
+    "promptTitle": "Search the catalogue",
+    "promptMessage": "Enter a keyword and press search to find stories.",
+    "loading": "Searching",
+    "noResultsTitle": "No results",
+    "noResultsMessage": "Try a different keyword or fewer filters."
+  },
+  "sort": {
+    "relevance": "Relevance",
+    "newest": "Newest",
+    "popular": "Popular",
+    "rating": "Rating",
+    "words": "Length",
+    "comments": "Comments"
+  },
+  "history": {
+    "title": "History",
+    "entries": "{{count}} entries",
+    "emptyTitle": "Nothing read yet",
+    "emptyMessage": "Stories you read will be listed here.",
+    "clearTitle": "Clear history",
+    "clearMessage": "This removes your reading history. This cannot be undone."
+  },
+  "story": {
+    "title": "Story",
+    "missing": "Missing story reference.",
+    "loading": "Loading story",
+    "error": "This story could not be loaded.",
+    "startReading": "Start reading",
+    "continue": "Continue · {{percent}}%",
+    "addToLibrary": "Add to library",
+    "inLibrary": "In library",
+    "openWeb": "Open on web",
+    "category": "Category",
+    "language": "Language",
+    "words": "Words",
+    "rating": "Rating",
+    "views": "Views",
+    "published": "Published",
+    "removeDownloadTitle": "Remove download",
+    "removeDownloadMessage": "The offline copy of this story will be deleted.",
+    "badgeNew": "New",
+    "badgeHot": "Hot",
+    "series": "Series"
+  },
+  "reader": {
+    "loading": "Loading story",
+    "noContent": "No content available for this story.",
+    "close": "Close reader",
+    "previous": "Prev",
+    "next": "Next",
+    "readingHub": "Reading hub",
+    "endOfChapter": "End of chapter",
+    "nextChapter": "Next chapter",
+    "continueTo": "Continue to {{title}}",
+    "progress": "Progress",
+    "font": "Font"
+  },
+  "download": {
+    "button": "Download",
+    "downloading": "Downloading…",
+    "downloaded": "Downloaded",
+    "retry": "Retry download",
+    "queued": "Queued",
+    "paused": "Paused",
+    "completed": "Downloaded · {{size}}{{pages}}",
+    "pages": " · {{count}} pages",
+    "failed": "Failed",
+    "failedWith": "Failed · {{error}}",
+    "delete": "Delete download"
+  },
+  "series": {
+    "title": "Series",
+    "view": "View series",
+    "downloadAll": "Download series",
+    "queued": "Added {{count}} stories to downloads",
+    "part": "Part {{index}}",
+    "loading": "Loading series",
+    "error": "This series could not be loaded."
+  },
+  "downloads": {
+    "title": "Downloads",
+    "summary": "{{count}} items · {{size}}",
+    "emptyTitle": "No downloads",
+    "emptyMessage": "Use the Download button on a story to keep it available offline.",
+    "clearTitle": "Clear completed downloads",
+    "clearMessage": "Offline copies of finished downloads are removed.",
+    "series": "Series",
+    "standalone": "Standalone",
+    "chapters": "{{count}} chapters",
+    "completedOf": "{{done}}/{{total}} downloaded"
+  },
+  "settings": {
+    "title": "Settings",
+    "appearance": "Appearance",
+    "theme": {
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark",
+      "amoled": "AMOLED"
+    },
+    "reader": "Reader",
+    "readerTheme": {
+      "light": "Light",
+      "sepia": "Sepia",
+      "dark": "Dark",
+      "black": "Black"
+    },
+    "font": {
+      "system": "System",
+      "serif": "Serif",
+      "opendyslexic": "Dyslexic"
+    },
+    "fontSize": "Font size",
+    "lineHeight": "Line height",
+    "pagination": "Pagination",
+    "paginationStyle": {
+      "horizontal": "Paginated",
+      "vertical": "Scroll"
+    },
+    "alignment": {
+      "left": "Left",
+      "justify": "Justify"
+    },
+    "advanced": "Advanced",
+    "offline": "Offline mode",
+    "offlineDescription": "Never make network requests",
+    "libraryUpdates": "Check for library updates",
+    "libraryUpdatesDescription": "Look for new chapters in the background",
+    "checkNow": "Check for updates now",
+    "storage": "Storage",
+    "cacheListings": "Cache listings",
+    "cacheListingsDescription": "Keep browse and search results for offline use",
+    "clearCache": "Clear cached data",
+    "clearCacheDescription": "Listings and responses",
+    "clearCacheTitle": "Clear cached data",
+    "clearCacheMessage": "Removes cached listings and responses. Library and downloaded stories are kept.",
+    "downloads": "Downloads",
+    "downloadsDescription": "Manage offline stories",
+    "backup": "Backup",
+    "autoBackup": "Auto backup",
+    "autoBackupDescription": "Back up on launch when due",
+    "backupFolder": "Backup folder",
+    "intervalHours": "Interval (hours)",
+    "keepBackups": "Keep backups",
+    "backupLevels": "Backup contents",
+    "backupLevelHint": "Choose what to include. Metadata is fast; story and download content is larger.",
+    "backupLevel": {
+      "meta": "Library & metadata",
+      "stories": "Story content",
+      "history": "History",
+      "downloads": "Downloads"
+    },
+    "backupNow": "Back up now",
+    "exportBackup": "Export backup file",
+    "exportBackupDescription": "Share a .json.gz snapshot",
+    "exportCsv": "Export library as CSV",
+    "restore": "Restore",
+    "restoreDescription": "Import a backup file",
+    "about": "About",
+    "version": "Version",
+    "disclaimer": "Master Reader is an unofficial, 18+ reader and is not affiliated with any content provider. You are responsible for complying with the terms of service of any source you configure.",
+    "reset": "Reset all settings",
+    "sources": "Sources",
+    "extensions": "Extensions",
+    "extensionsDescription": "Install sources for other platforms"
+  },
+  "backup": {
+    "doneTitle": "Backup",
+    "done": "Backup written to your folder.",
+    "exported": "Backup exported.",
+    "csvExported": "CSV exported.",
+    "failedTitle": "Backup failed",
+    "folderErrorTitle": "Could not choose folder",
+    "updatesTitle": "Library updates",
+    "updatesResult": "Checked {{checked}} stories, refreshed {{updated}}.",
+    "updatesFailed": "Could not check for updates right now."
+  },
+  "restore": {
+    "title": "Restore backup",
+    "mode": "Mode",
+    "merge": "Merge",
+    "mergeDescription": "Keep existing data and overwrite duplicates",
+    "replace": "Replace",
+    "replaceDescription": "Clear the library, progress and history first",
+    "skip": "Skip existing",
+    "skipDescription": "Only import records you do not already have",
+    "choose": "Choose backup file",
+    "description": "Backups are Master Reader .json.gz files. Only library, reading progress, history, sources and settings are restored; downloaded content is not included.",
+    "completeTitle": "Restore complete",
+    "completeMessage": "Imported {{imported}} records, skipped {{skipped}}.",
+    "failedTitle": "Restore failed"
+  },
+  "ageGate": {
+    "title": "Adults only",
+    "body": "Master Reader is a reader for adult fiction and is intended for people aged 18 and over. By continuing you confirm that you are at least 18 years old and that viewing adult material is legal where you live.",
+    "confirm": "I am 18 or older",
+    "deny": "Exit",
+    "denyTitle": "Access restricted",
+    "denyMessage": "You must be 18 or older to use Master Reader."
+  },
+  "error": {
+    "title": "Something went wrong",
+    "message": "The source could not be reached. Check your connection and try again."
+  },
+  "offline": {
+    "banner": "Offline mode — showing cached content only"
+  },
+  "extensions": {
+    "title": "Extensions",
+    "add": "Add extension",
+    "urlPlaceholder": "https://example.com/source.js",
+    "installFromUrl": "Install from URL",
+    "installFromUrlDescription": "Download a .js extension",
+    "codePlaceholder": "Paste extension JavaScript here…",
+    "installFromCode": "Install from code",
+    "installed": "Installed",
+    "version": "Version",
+    "empty": "No extensions installed yet.",
+    "installedMessage": "Extension installed.",
+    "installFailed": "Install failed",
+    "removeTitle": "Remove extension",
+    "removeMessage": "Remove \"{{name}}\"? Library items from it are kept.",
+    "disclaimer": "Extensions are third-party JavaScript that run in a sandbox. Only install extensions you trust."
+  }
+}

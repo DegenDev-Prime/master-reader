@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1789982000842,
+      "tag": "0000_small_timeslip",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789992472326,
+      "tag": "0001_wet_warhawk",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790029585443,
+      "tag": "0002_square_mongoose",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "success": true,
+  "total": 2,
+  "pages": [
+    {
+      "submission_id": 101,
+      "name": "The &amp; Long Road",
+      "url": "the-long-road",
+      "allow_vote": 1,
+      "series_id": 55,
+      "lang": 1,
+      "tags": [
+        { "name": "romance", "submission_count": 10 },
+        { "name": "slowburn", "submission_count": 30 }
+      ],
+      "content": "<p>Page one</p>"
+    },
+    {
+      "submission_id": 101,
+      "name": "The &amp; Long Road (2)",
+      "content": "<p>Page two</p>"
+    }
+  ]
+}

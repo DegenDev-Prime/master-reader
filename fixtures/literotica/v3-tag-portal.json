@@ -1,0 +1,15 @@
+{
+  "submissions": [
+    {
+      "id": 301,
+      "title": "Tagged Tale",
+      "category": 3,
+      "language": 1,
+      "date_approve": "12/31/2020",
+      "rate_all": 5,
+      "url": "tagged-tale",
+      "author": { "username": "Dana" }
+    }
+  ],
+  "meta": { "submissions_count": 1 }
+}

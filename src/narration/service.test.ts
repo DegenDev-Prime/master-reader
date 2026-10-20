@@ -280,6 +280,14 @@ describe('chunkIndexAfterSeconds', () => {
     expect(chunkIndexAfterSeconds(chunks, 2, -5, 1, 1)).toBe(0);
   });
 
+  it('never skips past the chunk that follows a long one', () => {
+    const chunks = makeChunks(5);
+    // The chunk is spoken for longer than it was estimated to: the skip must
+    // not land in the chunk after it.
+    const back = chunkIndexAfterSeconds(chunks, 2, -1, 1, 999);
+    expect(back).toBeLessThanOrEqual(2);
+  });
+
   it('stays inside the session', () => {
     const chunks = makeChunks(3);
     expect(chunkIndexAfterSeconds(chunks, 0, -60, 1)).toBe(0);

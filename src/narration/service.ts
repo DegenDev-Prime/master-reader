@@ -247,9 +247,13 @@ export function chunkIndexAfterSeconds(
   const index = clampIndex(fromIndex, chunks.length);
   const offsets = chunkOffsets(chunks, rate);
   const duration = estimateSeconds(chunks[index].text, rate);
+  // The place inside the chunk is capped by its length: a chunk that takes
+  // longer to speak than it was estimated to must not push the skip past the
+  // chunk that follows it.
+  const into = intoChunk > 0 ? Math.min(intoChunk, duration) : duration / 2;
   // Without a known position the chunk is taken to be half spoken, which is
   // the same assumption the player's time display makes.
-  const current = offsets[index] + (intoChunk > 0 ? intoChunk : duration / 2);
+  const current = offsets[index] + into;
   const target = current + seconds;
 
   if (target <= 0) return 0;

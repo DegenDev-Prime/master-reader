@@ -247,7 +247,7 @@ describe('chunkIndexAfterSeconds', () => {
   });
 
   it('rewinds to the start of the current chunk when the skip is shorter', () => {
-    // Each chunk is about four seconds long at 1x.
+    // Each chunk is two seconds long, so the current chunk is one second in.
     const chunks = makeChunks(5);
     expect(chunkIndexAfterSeconds(chunks, 3, -1, 1)).toBe(3);
   });
@@ -257,6 +257,24 @@ describe('chunkIndexAfterSeconds', () => {
     const back = chunkIndexAfterSeconds(chunks, 3, -30, 1);
     expect(back).toBeLessThan(3);
     expect(back).toBeGreaterThanOrEqual(0);
+  });
+
+  it('rewinds to the previous chunk when the skip passes the start of it', () => {
+    // Each chunk is two seconds long, so the current chunk is one second in;
+    // a five second rewind lands two chunks back.
+    const chunks = makeChunks(5);
+    expect(chunkIndexAfterSeconds(chunks, 3, -5, 1)).toBe(1);
+  });
+
+  it('skips forward onto the next chunk when the skip passes its end', () => {
+    const chunks = makeChunks(5);
+    expect(chunkIndexAfterSeconds(chunks, 1, 2.5, 1)).toBe(2);
+  });
+
+  it('stays inside the session', () => {
+    const chunks = makeChunks(3);
+    expect(chunkIndexAfterSeconds(chunks, 0, -60, 1)).toBe(0);
+    expect(chunkIndexAfterSeconds(chunks, 2, 600, 1)).toBe(2);
   });
 
   it('is a no-op for zero seconds', () => {

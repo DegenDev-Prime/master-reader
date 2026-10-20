@@ -1,4 +1,5 @@
 import { estimateChunkSeconds, NarrationStoppedError, type NarratorEngine } from './engine';
+import { chunkOffsets, estimateSeconds } from './player-estimates';
 import type { SpeechChunk } from './chunker';
 import { isSleepTimerExpired, type SleepTimerState } from './sleep-timer';
 import type { NarrationStatus } from './types';
@@ -231,8 +232,11 @@ function clampIndex(index: number, length: number): number {
 }
 
 /**
- * Maps a seconds-based skip onto a chunk index using spoken-duration
- * estimates, so ±15s skip works even though engines report no timing.
+ * Maps a seconds-based skip onto a chunk index. The position inside the
+ * current chunk is unknown, so the chunk is taken to be half spoken, which is
+ * the same assumption the player's time display makes. A skip that reaches
+ * past the current chunk lands on the next one, and a rewind lands on the
+ * previous one.
  */
 export function chunkIndexAfterSeconds(
   chunks: SpeechChunk[],
@@ -241,24 +245,16 @@ export function chunkIndexAfterSeconds(
   rate: number,
 ): number {
   if (chunks.length === 0) return 0;
-  if (seconds >= 0) {
-    let remaining = seconds;
-    let index = clampIndex(fromIndex, chunks.length);
-    while (index < chunks.length - 1) {
-      remaining -= estimateChunkSeconds(chunks[index].text, rate);
-      if (remaining <= 0) break;
-      index += 1;
-    }
-    return index;
+  const index = clampIndex(fromIndex, chunks.length);
+  const offsets = chunkOffsets(chunks, rate);
+  const current = offsets[index] + estimateSeconds(chunks[index].text, rate) / 2;
+  const target = current + seconds;
+
+  if (target <= 0) return 0;
+  const last = chunks.length - 1;
+  if (target >= offsets[last] + estimateSeconds(chunks[last].text, rate)) return last;
+  for (let position = last; position >= 0; position -= 1) {
+    if (target >= offsets[position]) return position;
   }
-  let remaining = -seconds;
-  let index = clampIndex(fromIndex, chunks.length);
-  // The current chunk is spoken from its start, so its own length comes off
-  // first. A skip shorter than the chunk rewinds to the start of it.
-  remaining -= estimateChunkSeconds(chunks[index].text, rate);
-  while (remaining > 0 && index > 0) {
-    index -= 1;
-    remaining -= estimateChunkSeconds(chunks[index].text, rate);
-  }
-  return index;
+  return 0;
 }

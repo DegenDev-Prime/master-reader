@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  chunkOffsets,
   estimateDurationMs,
   formatChapterLength,
   formatDuration,
@@ -54,6 +55,28 @@ describe('playerTiming', () => {
     const clamped = playerTiming(chunks, 99);
     expect(clamped.fraction).toBeLessThanOrEqual(1);
     expect(clamped.remainingMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('agrees with the timeline the skip controls use', () => {
+    const offsets = chunkOffsets(chunks, 1);
+    const timing = playerTiming(chunks, 1, 1);
+    // The current chunk is taken to be half spoken, so the clock sits halfway
+    // through it. A skip that uses the same timeline lands where the clock
+    // says it should.
+    const half = (offsets[1] + (offsets[2] - offsets[1]) / 2) * 1000;
+    expect(Math.abs(timing.elapsedMs - half)).toBeLessThan(2);
+  });
+});
+
+describe('chunkOffsets', () => {
+  it('starts the first chunk at zero and adds up the lengths', () => {
+    const chunks = [
+      { text: 'one two three four five six seven eight nine ten' },
+      { text: 'eleven twelve thirteen fourteen fifteen sixteen' },
+    ];
+    const offsets = chunkOffsets(chunks, 1);
+    expect(offsets[0]).toBe(0);
+    expect(offsets[1]).toBeGreaterThan(offsets[0]);
   });
 });
 

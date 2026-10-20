@@ -4,7 +4,7 @@ const SPLITS_BLOCK = `splits {
         abi {
             reset()
             enable true
-            universalApk false
+            universalApk true
             include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
         }
     }

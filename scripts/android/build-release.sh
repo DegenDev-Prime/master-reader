@@ -6,6 +6,10 @@
 # committed. This script regenerates it, builds the release variant, and runs
 # the ABI check so a partial build fails here rather than on a device.
 #
+# The build produces a universal APK (every ABI in one file) plus one APK per
+# ABI. The universal APK is the download most people want; the per-ABI files
+# are roughly a third of the size.
+#
 # Environment:
 #   ANDROID_HOME  Android SDK root (required by Gradle)
 #   ANDROID_ARCHITECTURES  space-separated ABI list (default: all supported)
@@ -50,17 +54,29 @@ echo "==> Building ${VARIANT} APK for: ${ALL_ABIS[*]}"
     "-PreactNativeArchitectures=$(IFS=,; echo "${ALL_ABIS[*]}")"
 )
 
-APK="android/app/build/outputs/apk/${VARIANT}/app-release.apk"
-if [[ $VARIANT == "debug" ]]; then
-  APK="android/app/build/outputs/apk/debug/app-debug.apk"
+OUT_DIR="android/app/build/outputs/apk/${VARIANT}"
+UNIVERSAL="${OUT_DIR}/app-universal-${VARIANT}.apk"
+if [[ ! -f "$UNIVERSAL" ]]; then
+  # The splits plugin always builds a universal APK; fall back to the plain
+  # output name when ABI splits are disabled.
+  UNIVERSAL="${OUT_DIR}/app-${VARIANT}.apk"
 fi
 
-if [[ ! -f "$APK" ]]; then
-  echo "error: expected APK at $APK" >&2
+if [[ ! -f "$UNIVERSAL" ]]; then
+  echo "error: no universal APK at ${OUT_DIR}/app-universal-${VARIANT}.apk" >&2
   exit 1
 fi
 
-echo "==> Verifying native libraries"
-scripts/android/verify-apk.sh "$APK" "${ALL_ABIS[@]}"
+echo "==> Verifying the universal APK"
+scripts/android/verify-apk.sh "$UNIVERSAL" "${ALL_ABIS[@]}"
 
-echo "==> APK: $APK"
+for abi in "${ALL_ABIS[@]}"; do
+  split="${OUT_DIR}/app-${abi}-${VARIANT}.apk"
+  if [[ -f "$split" ]]; then
+    echo "==> Verifying the ${abi} APK"
+    scripts/android/verify-apk.sh "$split" "$abi"
+  fi
+done
+
+echo "==> Universal APK: $UNIVERSAL"
+ls -la "$OUT_DIR"/*.apk

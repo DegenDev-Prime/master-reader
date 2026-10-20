@@ -25,6 +25,8 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - uses: android-actions/setup-android@v3
+
       - name: Install dependencies
         run: npm ci
 
@@ -45,17 +47,28 @@ jobs:
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "::error::ANDROID_KEYSTORE_BASE64 is not configured"; exit 1
           fi
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keystore.jks"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keystore.p12"
+          echo "KEYSTORE=$RUNNER_TEMP/keystore.p12" >> "$GITHUB_ENV"
 
       - name: Build release APK
         run: cd android && ./gradlew assembleRelease --no-daemon
 
+      # A build that only compiled some of the ABIs installs fine and crashes
+      # on launch, so the APKs are rejected here rather than after release.
       - name: Verify native libraries
-        run: scripts/android/verify-apk.sh android/app/build/outputs/apk/release/app-release-unsigned.apk
+        run: |
+          scripts/android/verify-apk.sh \
+            android/app/build/outputs/apk/release/app-universal-release.apk \
+            arm64-v8a armeabi-v7a x86 x86_64
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            scripts/android/verify-apk.sh \
+              "android/app/build/outputs/apk/release/app-${abi}-release.apk" \
+              "$abi"
+          done
 
-      - name: Align and sign APK
+      - name: Align and sign APKs
         env:
-          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/keystore.jks
+          ANDROID_KEYSTORE_PATH: ${{ env.KEYSTORE }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -65,17 +78,53 @@ jobs:
           else
             version="dev"
           fi
+          mkdir -p build/release
+          src="android/app/build/outputs/apk/release"
+
+          # The universal APK works on every device, so it gets the plain name.
           scripts/android/sign-apk.sh \
-            android/app/build/outputs/apk/release/app-release-unsigned.apk \
-            "master-reader-${version}.apk"
-          echo "APK=master-reader-${version}.apk" >> "$GITHUB_ENV"
+            "$src/app-universal-release.apk" \
+            "build/release/master-reader-${version}.apk"
+
+          # The per-ABI APKs are about a third of the size.
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            scripts/android/sign-apk.sh \
+              "$src/app-${abi}-release.apk" \
+              "build/release/master-reader-${version}-${abi}.apk"
+          done
+
           echo "VERSION=${version}" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.APK }}
+          files: build/release/*.apk
           generate_release_notes: true
+          body: |
+            ## Downloads
+
+            | File | Size | Use it when |
+            | ---- | ---- | ----------- |
+            | `master-reader-${{ env.VERSION }}.apk` | universal, all ABIs | You are not sure which device you have |
+            | `master-reader-${{ env.VERSION }}-arm64-v8a.apk` | ~74 MB | Almost every phone from the last decade |
+            | `master-reader-${{ env.VERSION }}-armeabi-v7a.apk` | ~57 MB | Older 32-bit devices |
+            | `master-reader-${{ env.VERSION }}-x86_64.apk` | ~80 MB | Android emulators |
+            | `master-reader-${{ env.VERSION }}-x86.apk` | ~81 MB | Older emulators |
+
+            Every APK is signed with the same release key, so you can install one
+            now and upgrade in place later.
+
+            ## Verify a download
+
+            ```bash
+            unzip -Z1 master-reader-${{ env.VERSION }}.apk | grep '\.so$' | head
+            ```
+
+            ## Note
+
+            Master Reader is unofficial and not affiliated with any content
+            provider. It is intended for adults (18+). You are responsible for
+            complying with the terms of service of any source you use.
 
       - name: Build self-hosted F-Droid repository
         if: startsWith(github.ref, 'refs/tags/v')
@@ -95,6 +144,6 @@ jobs:
           echo "$FDROID_REPO_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/fdroid-repo.jks"
           export FDROID_REPO_KEYSTORE="$RUNNER_TEMP/fdroid-repo.jks"
           export PATH="$HOME/.local/bin:$PATH"
-          scripts/fdroid/build-repo.sh build/fdroid "${{ env.APK }}"
+          scripts/fdroid/build-repo.sh build/fdroid build/release/*.apk
           tar -czf "master-reader-fdroid-repo-${VERSION}.tar.gz" -C build/fdroid/repo .
           gh release upload "$GITHUB_REF_NAME" "master-reader-fdroid-repo-${VERSION}.tar.gz" --clobber

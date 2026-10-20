@@ -52,4 +52,12 @@ jobs:
       # A partial ABI build installs but crashes on launch. The APK is
       # rejected here instead of shipping a broken download.
       - name: Verify native libraries
-        run: scripts/android/verify-apk.sh android/app/build/outputs/apk/release/app-release-unsigned.apk
+        run: |
+          scripts/android/verify-apk.sh \
+            android/app/build/outputs/apk/release/app-universal-release.apk \
+            arm64-v8a armeabi-v7a x86 x86_64
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            scripts/android/verify-apk.sh \
+              "android/app/build/outputs/apk/release/app-${abi}-release.apk" \
+              "$abi"
+          done

@@ -43,8 +43,9 @@ jobs:
       # is not used because its licence step blocks on an interactive prompt.
       - name: Set up the Android SDK
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager \
+          sdkmanager="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          "$sdkmanager" \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0" \

@@ -55,10 +55,13 @@ FDROID_KEYSTORE_PASSWORD=... \
 FDROID_KEY_ALIAS=master-reader-repo \
 FDROID_KEY_PASSWORD=... \
 FDROID_REPO_URL=https://example.org/fdroid \
-scripts/fdroid/build-repo.sh build/fdroid master-reader-0.2.0.apk
+scripts/fdroid/build-repo.sh build/fdroid master-reader-0.2.0-arm64-v8a.apk \
+  master-reader-0.2.0-armeabi-v7a.apk master-reader-0.2.0-x86_64.apk \
+  master-reader-0.2.0-x86.apk
 ```
 
-The publishable index is written to `build/fdroid/repo`.
+Stage one APK per ABI: that is what F-Droid clients expect, and it keeps the
+downloads small. The publishable index is written to `build/fdroid/repo`.
 
 ## Constraints recap
 

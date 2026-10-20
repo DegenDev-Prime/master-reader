@@ -9,6 +9,7 @@
     "cheerio": "^1.0.0-rc.12",
     "drizzle-orm": "^0.45.2",
     "expo": "~57.0.24",
+    "expo-asset": "~57.0.20",
     "expo-audio": "~57.0.5",
     "expo-background-task": "~57.0.19",
     "expo-build-properties": "~57.0.22",
@@ -50,6 +51,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@react-native/metro-config": "^0.86.3",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.2",
     "@types/react": "~19.2.2",
@@ -62,6 +64,7 @@
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.8",
     "typescript": "~6.0.3",
+    "vite": "^8.3.0",
     "vitest": "^5.0.1"
   },
   "scripts": {
@@ -83,10 +86,5 @@
     "db:check": "drizzle-kit check",
     "verify": "npm run typecheck && npm run lint && npm run test"
   },
-  "private": true,
-  "overrides": {
-    "@emnapi/core": "1.10.0",
-    "@emnapi/runtime": "1.10.0",
-    "@emnapi/wasi-threads": "1.2.1"
-  }
+  "private": true
 }

@@ -43,7 +43,8 @@
           }
         }
       ],
-      "./plugins/with-abi-splits"
+      "./plugins/with-abi-splits",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,

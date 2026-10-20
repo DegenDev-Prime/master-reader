@@ -4,7 +4,11 @@ import type { Download, Story } from '@/models/story';
 
 import { downloadItemsBytes, groupDownloadItems, type DownloadItem } from './download-groups';
 
-function item(id: string, overrides: Partial<Story> = {}, sizeBytes: number | null = 0): DownloadItem {
+function item(
+  id: string,
+  overrides: Partial<Story> = {},
+  sizeBytes: number | null = 0,
+): DownloadItem {
   const download: Download = {
     sourceId: 'literotica',
     storyId: id,

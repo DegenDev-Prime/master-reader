@@ -10,8 +10,10 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { clearCaches } from '@/services/cache';
 import { useSettingsStore } from '@/stores/settings';
+import { useBackToParent } from '@/navigation/use-parent-back';
 
 export default function StorageSettingsScreen() {
+  const backToParent = useBackToParent();
   const theme = useTheme();
   const settings = useSettingsStore((state) => state.settings);
   const setSetting = useSettingsStore((state) => state.setSetting);
@@ -25,7 +27,10 @@ export default function StorageSettingsScreen() {
 
   return (
     <Screen>
-      <AppBar title={t('settings.storage')} onBack={() => router.back()} />
+      <AppBar
+        title={t('settings.storage')}
+        onBack={() => backToParent({ pathname: '/settings' })}
+      />
       <ScrollView contentContainerStyle={styles.content}>
         <Section title={t('settings.storage')}>
           <Row

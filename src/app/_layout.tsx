@@ -1,3 +1,5 @@
+import 'react-native-url-polyfill/auto';
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { NavigationBar } from 'expo-navigation-bar';
@@ -9,9 +11,10 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AgeGate } from '@/components/age-gate';
+import { BrowserHost } from '@/components/browser-host';
 import { DatabaseGate } from '@/db/provider';
-import { ExtensionHost } from '@/extensions/host';
 import { useSettingsStore } from '@/stores/settings';
+import { recoverInterruptedDownloads } from '@/services/downloads';
 import { syncLibraryUpdateTask } from '@/tasks/library-update';
 import { AppThemeProvider, useAppTheme } from '@/theme';
 
@@ -59,20 +62,31 @@ function RootNavigator() {
         }}
       >
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="search" />
         <Stack.Screen name="story/[sourceId]/[id]" />
-        <Stack.Screen name="series/[sourceId]/[id]" />
+        <Stack.Screen name="chapters/[sourceId]/[id]" />
+        <Stack.Screen
+          name="reader/[sourceId]/[novelId]/[chapterId]"
+          options={{ animation: 'fade' }}
+        />
         <Stack.Screen name="reader/[sourceId]/[id]" options={{ animation: 'fade' }} />
         <Stack.Screen name="downloads/index" />
-        <Stack.Screen name="downloads/series/[seriesId]" />
+        <Stack.Screen name="downloads/[sourceId]/[novelId]" />
+        <Stack.Screen name="history" />
+        <Stack.Screen name="sources" />
+        <Stack.Screen name="settings/index" />
         <Stack.Screen name="settings/appearance" />
         <Stack.Screen name="settings/reader" />
         <Stack.Screen name="settings/advanced" />
         <Stack.Screen name="settings/sources" />
+        <Stack.Screen name="settings/narration" />
         <Stack.Screen name="settings/storage" />
         <Stack.Screen name="settings/backup" />
         <Stack.Screen name="settings/about" />
         <Stack.Screen name="restore" />
         <Stack.Screen name="sources" />
+        <Stack.Screen name="pronunciation" />
+        <Stack.Screen name="export" />
       </Stack>
     </ThemeProvider>
   );
@@ -92,6 +106,12 @@ function ThemedRoot() {
     void syncLibraryUpdateTask(checkForLibraryUpdates);
   }, [checkForLibraryUpdates]);
 
+  // Runs once, before any download worker can start, so no in-flight run is
+  // ever clobbered by the re-queue.
+  useEffect(() => {
+    void recoverInterruptedDownloads();
+  }, []);
+
   return (
     <AppThemeProvider
       preference={preference}
@@ -100,7 +120,7 @@ function ThemedRoot() {
       }}
     >
       <AppChrome />
-      <ExtensionHost />
+      <BrowserHost />
       {ageConfirmed ? (
         <RootNavigator />
       ) : (

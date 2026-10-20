@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { t } from '@/i18n';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -15,6 +15,7 @@ export function OfflineBanner() {
 
   return (
     <View
+      accessibilityLiveRegion="polite"
       style={[
         styles.banner,
         { backgroundColor: theme.backgroundElement, borderColor: theme.border },
@@ -33,11 +34,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
+    marginTop: Spacing.two,
     marginHorizontal: Spacing.three,
     marginBottom: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-    borderRadius: 10,
+    borderRadius: Radius.small,
     borderWidth: StyleSheet.hairlineWidth,
   },
 });

@@ -77,6 +77,12 @@ export const stories = sqliteTable(
     votes: integer('votes'),
     views: integer('views'),
     wordCount: integer('word_count'),
+    status: text('status'),
+    genres: text('genres', { mode: 'json' }).$type<string[]>(),
+    stats: text('stats', { mode: 'json' }).$type<Record<string, string | number>>(),
+    chapterCount: integer('chapter_count'),
+    chaptersSyncedAt: integer('chapters_synced_at'),
+    updatedAt: integer('updated_at'),
     isNew: integer('is_new', { mode: 'boolean' }),
     isHot: integer('is_hot', { mode: 'boolean' }),
     isWritersPick: integer('is_writers_pick', { mode: 'boolean' }),
@@ -99,16 +105,6 @@ export const stories = sqliteTable(
   ],
 );
 
-export const storyTags = sqliteTable(
-  'story_tags',
-  {
-    sourceId: text('source_id').notNull(),
-    storyId: text('story_id').notNull(),
-    tagId: text('tag_id').notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.sourceId, t.storyId, t.tagId] })],
-);
-
 /** Story content, split into pages. The "cached chapter" tier. */
 export const pages = sqliteTable(
   'pages',
@@ -117,18 +113,12 @@ export const pages = sqliteTable(
     storyId: text('story_id').notNull(),
     index: integer('index').notNull(),
     title: text('title'),
+    chapterId: text('chapter_id'),
     content: text('content'),
     wordCount: integer('word_count'),
   },
   (t) => [primaryKey({ columns: [t.sourceId, t.storyId, t.index] })],
 );
-
-export const libraryCategories = sqliteTable('library_categories', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  sortOrder: integer('sort_order').notNull().default(0),
-  createdAt: integer('created_at').notNull().default(unixNow),
-});
 
 export const libraryEntries = sqliteTable(
   'library_entries',
@@ -143,22 +133,15 @@ export const libraryEntries = sqliteTable(
   (t) => [primaryKey({ columns: [t.sourceId, t.storyId] })],
 );
 
-export const libraryCategoryEntries = sqliteTable(
-  'library_category_entries',
-  {
-    categoryId: text('category_id').notNull(),
-    sourceId: text('source_id').notNull(),
-    storyId: text('story_id').notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.categoryId, t.sourceId, t.storyId] })],
-);
-
 export const readingProgress = sqliteTable(
   'reading_progress',
   {
     sourceId: text('source_id').notNull(),
     storyId: text('story_id').notNull(),
     pageIndex: integer('page_index').notNull().default(0),
+    chapterId: text('chapter_id'),
+    paragraphIndex: integer('paragraph_index'),
+    charOffset: integer('char_offset'),
     pageCount: integer('page_count'),
     scrollPct: real('scroll_pct').notNull().default(0),
     readPages: text('read_pages', { mode: 'json' }).$type<number[]>(),
@@ -174,6 +157,8 @@ export const history = sqliteTable(
     sourceId: text('source_id').notNull(),
     storyId: text('story_id').notNull(),
     pageIndex: integer('page_index').notNull().default(0),
+    chapterId: text('chapter_id'),
+    paragraphIndex: integer('paragraph_index'),
     durationMs: integer('duration_ms'),
     readAt: integer('read_at').notNull().default(unixNow),
   },
@@ -240,17 +225,128 @@ export const settings = sqliteTable('settings', {
   updatedAt: integer('updated_at').notNull().default(unixNow),
 });
 
-/** Installed runtime extensions (JS source packages). */
-export const extensions = sqliteTable('extensions', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  version: text('version').notNull(),
-  lang: text('lang').notNull().default('en'),
-  baseUrl: text('base_url').notNull(),
-  manifest: text('manifest', { mode: 'json' }).$type<Record<string, unknown>>(),
-  code: text('code').notNull(),
-  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
-  sourceUrl: text('source_url'),
-  installedAt: integer('installed_at').notNull().default(unixNow),
-  updatedAt: integer('updated_at').notNull().default(unixNow),
-});
+/** Per-story narration playback position (engine, voice, speed, chunk). */
+export const narrationState = sqliteTable(
+  'narration_state',
+  {
+    sourceId: text('source_id').notNull(),
+    storyId: text('story_id').notNull(),
+    chapterId: text('chapter_id'),
+    paragraphIndex: integer('paragraph_index'),
+    engine: text('engine').notNull().default('system'),
+    voiceId: text('voice_id'),
+    speed: real('speed').notNull().default(1),
+    chunkIndex: integer('chunk_index').notNull().default(0),
+    charOffset: integer('char_offset').notNull().default(0),
+    updatedAt: integer('updated_at').notNull().default(unixNow),
+  },
+  (t) => [primaryKey({ columns: [t.sourceId, t.storyId] })],
+);
+
+/** User-saved narration positions within a story. */
+export const narrationBookmarks = sqliteTable(
+  'narration_bookmarks',
+  {
+    id: text('id').primaryKey(),
+    sourceId: text('source_id').notNull(),
+    storyId: text('story_id').notNull(),
+    chapterId: text('chapter_id'),
+    paragraphIndex: integer('paragraph_index'),
+    chunkIndex: integer('chunk_index').notNull().default(0),
+    label: text('label'),
+    createdAt: integer('created_at').notNull().default(unixNow),
+  },
+  (t) => [index('narration_bookmarks_story_idx').on(t.sourceId, t.storyId)],
+);
+
+/** The chapter catalog. One row per chapter, per novel. */
+export const chapters = sqliteTable(
+  'chapters',
+  {
+    sourceId: text('source_id').notNull(),
+    novelId: text('novel_id').notNull(),
+    id: text('id').notNull(),
+    position: integer('position').notNull(),
+    number: real('number'),
+    title: text('title'),
+    volume: text('volume'),
+    volumeIndex: integer('volume_index'),
+    releasedAt: integer('released_at'),
+    wordCount: integer('word_count'),
+    content: text('content'),
+    contentHash: text('content_hash'),
+    orphaned: integer('orphaned', { mode: 'boolean' }).notNull().default(false),
+    updatedAt: integer('updated_at').notNull().default(unixNow),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sourceId, t.novelId, t.id] }),
+    index('chapters_order_idx').on(t.sourceId, t.novelId, t.orphaned, t.position),
+  ],
+);
+
+/** Per-chapter download state. Complements the story-level `downloads` tier. */
+export const chapterDownloads = sqliteTable(
+  'chapter_downloads',
+  {
+    sourceId: text('source_id').notNull(),
+    novelId: text('novel_id').notNull(),
+    chapterId: text('chapter_id').notNull(),
+    status: text('status').notNull().default('queued'),
+    error: text('error'),
+    bytes: integer('bytes'),
+    updatedAt: integer('updated_at').notNull().default(unixNow),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sourceId, t.novelId, t.chapterId] }),
+    index('chapter_downloads_status_idx').on(t.status, t.updatedAt),
+  ],
+);
+
+/** Chapters the user has read. */
+export const chapterReads = sqliteTable(
+  'chapter_reads',
+  {
+    sourceId: text('source_id').notNull(),
+    novelId: text('novel_id').notNull(),
+    chapterId: text('chapter_id').notNull(),
+    readAt: integer('read_at').notNull().default(unixNow),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sourceId, t.novelId, t.chapterId] }),
+    index('chapter_reads_novel_idx').on(t.sourceId, t.novelId),
+  ],
+);
+
+/** Per-source, per-operation health. Drives the source health screen. */
+export const sourceHealth = sqliteTable(
+  'source_health',
+  {
+    sourceId: text('source_id').notNull(),
+    operation: text('operation').notNull(),
+    lastOkAt: integer('last_ok_at'),
+    lastErrorAt: integer('last_error_at'),
+    lastErrorKind: text('last_error_kind'),
+    failCount: integer('fail_count').notNull().default(0),
+    ewmaLatencyMs: real('ewma_latency_ms'),
+    parserVersion: text('parser_version'),
+  },
+  (t) => [primaryKey({ columns: [t.sourceId, t.operation] })],
+);
+
+/** Newly discovered chapters. Backs the Updates feed. */
+export const storyUpdates = sqliteTable(
+  'story_updates',
+  {
+    id: text('id').primaryKey(),
+    sourceId: text('source_id').notNull(),
+    novelId: text('novel_id').notNull(),
+    chapterId: text('chapter_id').notNull(),
+    chapterTitle: text('chapter_title'),
+    createdAt: integer('created_at').notNull().default(unixNow),
+    seenAt: integer('seen_at'),
+  },
+  (t) => [
+    uniqueIndex('story_updates_unique_idx').on(t.sourceId, t.novelId, t.chapterId),
+    index('story_updates_seen_idx').on(t.seenAt, t.createdAt),
+  ],
+);

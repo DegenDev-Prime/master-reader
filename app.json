@@ -2,7 +2,7 @@
   "expo": {
     "name": "Master Reader",
     "slug": "master-reader",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "master-reader",
@@ -31,7 +31,19 @@
       "expo-sqlite",
       "expo-sharing",
       "expo-localization",
-      "expo-background-task"
+      "expo-background-task",
+      "expo-audio",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "-keep class app.masterreader.sherpatts.** { *; }\n-keep class com.k2fsa.sherpa.onnx.** { *; }\n-keep class ai.onnxruntime.** { *; }"
+          }
+        }
+      ],
+      "./plugins/with-abi-splits"
     ],
     "experiments": {
       "typedRoutes": true,

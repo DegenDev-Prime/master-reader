@@ -1,9 +1,0 @@
-- verify downloaded storis appear in library and history once read
-- implement series chapter chaining so users can auto scroll into the next chapter
-- remove the always present typography and page controls at the buttom of the reader screen and instead create a reading hub that is hidden unless the screen i double tapped, the hud will proper reader scrolls (pagination style, reading history indicator, font)
-- organize the downloads screen to reduce scroll each serise should have one entry with subscreen-lists for chapters
-- divide settings screens into subscreens devoted to each setting
-- multiple backup types that are performant with defined levels of backups the user can choose to create (meta, stories, history, download) etc
-- create app icon for splash screen and logo
-- build apk
-- sleep/shutdown pc safely

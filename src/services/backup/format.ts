@@ -9,6 +9,7 @@ import type {
   Story,
   StoryPage,
 } from '@/models/story';
+import type { NarrationBookmark, NarrationProgress } from '@/narration/types';
 import type { BackupLevel } from '@/services/settings';
 
 export const BACKUP_MAGIC = 'masterreader-backup';
@@ -35,6 +36,9 @@ export type BackupData = {
   pages: StoryPage[];
   /** Download records, present for the `downloads` scope. */
   downloads: Download[];
+  /** Narration positions and bookmarks, part of the `meta` scope. */
+  narration: NarrationProgress[];
+  narrationBookmarks: NarrationBookmark[];
   settings: Record<string, unknown>;
   sources: Record<string, unknown>[];
 };
@@ -73,6 +77,12 @@ const backupEnvelopeSchema = z.looseObject({
       .nullish(),
     downloads: z
       .array(z.looseObject({ sourceId: z.string(), storyId: z.string(), status: z.string() }))
+      .nullish(),
+    narration: z
+      .array(z.looseObject({ sourceId: z.string(), storyId: z.string(), chunkIndex: z.number() }))
+      .nullish(),
+    narrationBookmarks: z
+      .array(z.looseObject({ id: z.string(), sourceId: z.string(), storyId: z.string() }))
       .nullish(),
     settings: z.record(z.string(), z.unknown()),
     sources: z.array(z.record(z.string(), z.unknown())).nullish(),
@@ -124,6 +134,8 @@ export function decodeBackup(bytes: Uint8Array): BackupEnvelope {
       history: result.data.data.history as HistoryEntry[],
       pages: (result.data.data.pages ?? []) as StoryPage[],
       downloads: (result.data.data.downloads ?? []) as Download[],
+      narration: (result.data.data.narration ?? []) as NarrationProgress[],
+      narrationBookmarks: (result.data.data.narrationBookmarks ?? []) as NarrationBookmark[],
       settings: result.data.data.settings,
       sources: (result.data.data.sources ?? []) as Record<string, unknown>[],
     },

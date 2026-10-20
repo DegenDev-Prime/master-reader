@@ -3,6 +3,7 @@ import type { Story, StoryPage, StorySeries } from '@/models/story';
 import {
   DEFAULT_PAGE_SIZE,
   OfflineError,
+  type BrowseKind,
   type PagedResult,
   type SearchFilters,
   type StoryDetails,
@@ -12,7 +13,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { listParamsHash, readListCache, writeListCache, type ListCacheKind } from './list-cache';
 import { getSource } from './source-manager';
 
-export type BrowseKind = 'popular' | 'latest';
+export type { BrowseKind };
 
 function isOffline(): boolean {
   return useSettingsStore.getState().settings.offlineMode;
@@ -172,12 +173,9 @@ async function cachedSeries(sourceId: string, story: Story): Promise<StorySeries
 /** Returns cached pages when present, otherwise fetches and persists them. */
 export async function getStoryPages(sourceId: string, id: string): Promise<StoryPage[]> {
   const cached = await pagesRepository.listForStory(sourceId, id);
-  if (cached.length > 0 && cached.some((page) => page.content)) {
-    return cached;
-  }
+  if (cached.length > 0) return cached;
 
   if (isOffline()) {
-    if (cached.length > 0) return cached;
     throw new OfflineError('This story has not been downloaded or cached yet.');
   }
 
@@ -185,6 +183,69 @@ export async function getStoryPages(sourceId: string, id: string): Promise<Story
   return details?.pages ?? [];
 }
 
+/**
+ * Resolves one page/chapter's content, fetching it lazily from the provider and
+ * caching it. Providers that return full content up front simply hit the cache.
+ */
+export async function getPageContent(
+  sourceId: string,
+  storyId: string,
+  index: number,
+): Promise<string | null> {
+  const pages = await pagesRepository.listForStory(sourceId, storyId);
+  const page = pages.find((entry) => entry.index === index);
+  if (!page) return null;
+  if (page.content) return page.content;
+
+  const source = getSource(sourceId);
+  if (!source.getChapterContent || !page.id) return page.content ?? null;
+
+  if (isOffline()) {
+    throw new OfflineError('This chapter has not been downloaded or cached yet.');
+  }
+
+  const content = await source.getChapterContent(storyId, page.id);
+  if (content != null) {
+    await pagesRepository.upsertMany([{ ...page, content }]);
+  }
+  return content;
+}
+
 export async function getCachedStory(sourceId: string, id: string): Promise<Story | null> {
   return storiesRepository.get(sourceId, id);
+}
+
+/**
+ * Ensures every page/chapter of a story has content, fetching the missing ones
+ * from the provider sequentially (chapter-based providers are rate sensitive).
+ * Returns the full page list; used by downloads and narration.
+ */
+export async function ensurePageContents(
+  sourceId: string,
+  storyId: string,
+  onProgress?: (done: number, total: number) => void,
+  limit?: number,
+): Promise<StoryPage[]> {
+  const pages = await pagesRepository.listForStory(sourceId, storyId);
+  const source = getSource(sourceId);
+  if (!source.getChapterContent) {
+    onProgress?.(pages.length, pages.length);
+    return pages;
+  }
+
+  const result = [...pages];
+  const cap = limit != null ? Math.min(limit, result.length) : result.length;
+  for (let i = 0; i < cap; i += 1) {
+    const page = result[i];
+    if (!page.content && page.id) {
+      if (isOffline()) throw new OfflineError('This chapter has not been downloaded yet.');
+      const content = await source.getChapterContent(storyId, page.id);
+      if (content != null) {
+        result[i] = { ...page, content };
+        await pagesRepository.upsertMany([result[i]]);
+      }
+    }
+    onProgress?.(i + 1, result.length);
+  }
+  return result;
 }

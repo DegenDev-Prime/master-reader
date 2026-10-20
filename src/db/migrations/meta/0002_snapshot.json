@@ -67,19 +67,14 @@
       "indexes": {
         "authors_name_idx": {
           "name": "authors_name_idx",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": false
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "authors_source_id_id_pk": {
-          "columns": [
-            "source_id",
-            "id"
-          ],
+          "columns": ["source_id", "id"],
           "name": "authors_source_id_id_pk"
         }
       },
@@ -150,9 +145,7 @@
       "indexes": {
         "cached_responses_expires_idx": {
           "name": "cached_responses_expires_idx",
-          "columns": [
-            "expires_at"
-          ],
+          "columns": ["expires_at"],
           "isUnique": false
         }
       },
@@ -190,10 +183,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "categories_source_id_id_pk": {
-          "columns": [
-            "source_id",
-            "id"
-          ],
+          "columns": ["source_id", "id"],
           "name": "categories_source_id_id_pk"
         }
       },
@@ -279,19 +269,14 @@
       "indexes": {
         "downloads_status_idx": {
           "name": "downloads_status_idx",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "downloads_source_id_story_id_pk": {
-          "columns": [
-            "source_id",
-            "story_id"
-          ],
+          "columns": ["source_id", "story_id"],
           "name": "downloads_source_id_story_id_pk"
         }
       },
@@ -440,9 +425,7 @@
       "indexes": {
         "history_read_at_idx": {
           "name": "history_read_at_idx",
-          "columns": [
-            "read_at"
-          ],
+          "columns": ["read_at"],
           "isUnique": false
         }
       },
@@ -520,11 +503,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "library_category_entries_category_id_source_id_story_id_pk": {
-          "columns": [
-            "category_id",
-            "source_id",
-            "story_id"
-          ],
+          "columns": ["category_id", "source_id", "story_id"],
           "name": "library_category_entries_category_id_source_id_story_id_pk"
         }
       },
@@ -583,10 +562,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "library_entries_source_id_story_id_pk": {
-          "columns": [
-            "source_id",
-            "story_id"
-          ],
+          "columns": ["source_id", "story_id"],
           "name": "library_entries_source_id_story_id_pk"
         }
       },
@@ -643,11 +619,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "pages_source_id_story_id_index_pk": {
-          "columns": [
-            "source_id",
-            "story_id",
-            "index"
-          ],
+          "columns": ["source_id", "story_id", "index"],
           "name": "pages_source_id_story_id_index_pk"
         }
       },
@@ -714,10 +686,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "reading_progress_source_id_story_id_pk": {
-          "columns": [
-            "source_id",
-            "story_id"
-          ],
+          "columns": ["source_id", "story_id"],
           "name": "reading_progress_source_id_story_id_pk"
         }
       },
@@ -828,12 +797,7 @@
       "indexes": {
         "source_list_cache_unique_idx": {
           "name": "source_list_cache_unique_idx",
-          "columns": [
-            "source_id",
-            "kind",
-            "page",
-            "params_hash"
-          ],
+          "columns": ["source_id", "kind", "page", "params_hash"],
           "isUnique": true
         }
       },
@@ -1109,44 +1073,29 @@
       "indexes": {
         "stories_author_idx": {
           "name": "stories_author_idx",
-          "columns": [
-            "source_id",
-            "author_id"
-          ],
+          "columns": ["source_id", "author_id"],
           "isUnique": false
         },
         "stories_category_idx": {
           "name": "stories_category_idx",
-          "columns": [
-            "source_id",
-            "category_id"
-          ],
+          "columns": ["source_id", "category_id"],
           "isUnique": false
         },
         "stories_published_idx": {
           "name": "stories_published_idx",
-          "columns": [
-            "source_id",
-            "published_at"
-          ],
+          "columns": ["source_id", "published_at"],
           "isUnique": false
         },
         "stories_series_idx": {
           "name": "stories_series_idx",
-          "columns": [
-            "source_id",
-            "series_id"
-          ],
+          "columns": ["source_id", "series_id"],
           "isUnique": false
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "stories_source_id_id_pk": {
-          "columns": [
-            "source_id",
-            "id"
-          ],
+          "columns": ["source_id", "id"],
           "name": "stories_source_id_id_pk"
         }
       },
@@ -1182,11 +1131,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "story_tags_source_id_story_id_tag_id_pk": {
-          "columns": [
-            "source_id",
-            "story_id",
-            "tag_id"
-          ],
+          "columns": ["source_id", "story_id", "tag_id"],
           "name": "story_tags_source_id_story_id_tag_id_pk"
         }
       },
@@ -1221,19 +1166,14 @@
       "indexes": {
         "tags_name_idx": {
           "name": "tags_name_idx",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": false
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "tags_source_id_id_pk": {
-          "columns": [
-            "source_id",
-            "id"
-          ],
+          "columns": ["source_id", "id"],
           "name": "tags_source_id_id_pk"
         }
       },

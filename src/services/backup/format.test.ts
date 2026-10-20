@@ -27,6 +27,8 @@ const envelope: BackupEnvelope = {
     history: [],
     pages: [],
     downloads: [],
+    narration: [],
+    narrationBookmarks: [],
     settings: { theme: 'dark' },
     sources: [],
   },
@@ -65,6 +67,8 @@ describe('backup encoding', () => {
     expect(decoded.data.levels).toEqual(['meta']);
     expect(decoded.data.pages).toEqual([]);
     expect(decoded.data.downloads).toEqual([]);
+    expect(decoded.data.narration).toEqual([]);
+    expect(decoded.data.narrationBookmarks).toEqual([]);
   });
 
   it('rejects files that are not JSON', () => {

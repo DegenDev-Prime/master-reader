@@ -1,14 +1,17 @@
+import type { ReactNode } from 'react';
 import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { Radius, Spacing } from '@/constants/theme';
+import { MinTouchTarget, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export type TextFieldProps = TextInputProps & {
   icon?: keyof typeof Ionicons.glyphMap;
+  /** Slot rendered after the input, e.g. a clear button. */
+  right?: ReactNode;
 };
 
-export function TextField({ icon, style, ...rest }: TextFieldProps) {
+export function TextField({ icon, right, style, ...rest }: TextFieldProps) {
   const theme = useTheme();
 
   return (
@@ -24,6 +27,7 @@ export function TextField({ icon, style, ...rest }: TextFieldProps) {
         style={[styles.input, { color: theme.text }, style]}
         {...rest}
       />
+      {right}
     </View>
   );
 }
@@ -36,7 +40,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     borderRadius: Radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
-    minHeight: 44,
+    minHeight: MinTouchTarget,
   },
   input: {
     flex: 1,

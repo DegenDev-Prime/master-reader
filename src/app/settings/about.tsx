@@ -1,5 +1,4 @@
 import Constants from 'expo-constants';
-import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { t } from '@/i18n';
@@ -10,14 +9,16 @@ import { Screen } from '@/components/ui/screen';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useSettingsStore } from '@/stores/settings';
+import { useBackToParent } from '@/navigation/use-parent-back';
 
 export default function AboutSettingsScreen() {
+  const backToParent = useBackToParent();
   const theme = useTheme();
   const reset = useSettingsStore((state) => state.reset);
 
   return (
     <Screen>
-      <AppBar title={t('settings.about')} onBack={() => router.back()} />
+      <AppBar title={t('settings.about')} onBack={() => backToParent({ pathname: '/settings' })} />
       <ScrollView contentContainerStyle={styles.content}>
         <Section title={t('settings.about')}>
           <Row

@@ -1,0 +1,21 @@
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'app.masterreader.sherpatts'
+version = '0.1.0'
+
+android {
+  namespace 'app.masterreader.sherpatts'
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}
+
+dependencies {
+  // On-device neural TTS runtime (Apache-2.0). Fetched from JitPack, already
+  // declared in the root project's repositories.
+  implementation 'com.github.k2-fsa.sherpa-onnx:sherpa-onnx:1.13.5'
+  // tar.bz2 extraction for voice-pack tarballs (Apache-2.0).
+  implementation 'org.apache.commons:commons-compress:1.26.1'
+}

@@ -6,13 +6,16 @@ import { useTheme } from '@/hooks/use-theme';
 export type ThemedTextType =
   | 'default'
   | 'title'
+  | 'title2'
   | 'heading'
+  | 'bodyStrong'
   | 'small'
   | 'smallBold'
   | 'subtitle'
   | 'link'
   | 'linkPrimary'
-  | 'code';
+  | 'code'
+  | 'eyebrow';
 
 export type ThemedTextProps = TextProps & {
   type?: ThemedTextType;
@@ -21,20 +24,26 @@ export type ThemedTextProps = TextProps & {
 
 export function ThemedText({ style, type = 'default', themeColor, ...rest }: ThemedTextProps) {
   const theme = useTheme();
+  const color =
+    themeColor ??
+    (type === 'linkPrimary' ? 'primary' : type === 'eyebrow' ? 'textSecondary' : 'text');
 
   return (
     <Text
       style={[
-        { color: theme[themeColor ?? 'text'] },
+        { color: theme[color] },
         type === 'default' && styles.default,
         type === 'title' && styles.title,
+        type === 'title2' && styles.title2,
         type === 'heading' && styles.heading,
+        type === 'bodyStrong' && styles.bodyStrong,
         type === 'small' && styles.small,
         type === 'smallBold' && styles.smallBold,
         type === 'subtitle' && styles.subtitle,
         type === 'link' && styles.link,
         type === 'linkPrimary' && styles.linkPrimary,
         type === 'code' && styles.code,
+        type === 'eyebrow' && styles.eyebrow,
         style,
       ]}
       {...rest}
@@ -48,6 +57,13 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: 500,
   },
+  eyebrow: {
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    fontWeight: 500,
+  },
   smallBold: {
     fontSize: 14,
     lineHeight: 20,
@@ -56,7 +72,17 @@ const styles = StyleSheet.create({
   default: {
     fontSize: 16,
     lineHeight: 24,
+    fontWeight: 400,
+  },
+  bodyStrong: {
+    fontSize: 16,
+    lineHeight: 24,
     fontWeight: 500,
+  },
+  title2: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: 600,
   },
   title: {
     fontSize: 48,
@@ -80,7 +106,6 @@ const styles = StyleSheet.create({
   linkPrimary: {
     lineHeight: 30,
     fontSize: 14,
-    color: '#3c87f7',
   },
   code: {
     fontFamily: Fonts.mono,

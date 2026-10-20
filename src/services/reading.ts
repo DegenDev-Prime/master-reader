@@ -16,6 +16,11 @@ export async function loadProgress(
   return progressRepository.get(sourceId, storyId);
 }
 
+/** Every saved reading position, for progress summaries across the library. */
+export async function listAllProgress(): Promise<ReadingProgress[]> {
+  return progressRepository.listAll();
+}
+
 export type SaveReadingProgressInput = {
   sourceId: string;
   storyId: string;

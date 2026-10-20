@@ -1,15 +1,44 @@
 # Master Reader
 
-A modern, offline-first reader for serialized fiction, built on Expo (React Native).
-Master Reader is a from-scratch replacement for the unmaintained
-[`theilluminatus/litapp`](https://github.com/theilluminatus/litapp) Ionic 3 app.
+A modern, offline-first reader for serialized fiction, built with Expo (React Native).
 
-> **Status:** Phase 9 — a runtime extension system lets users add sources for other platforms.
-> All planned phases are complete.
+Master Reader is a from-scratch Android app for reading web novels, serialised stories and
+creator archives. It keeps a local SQLite copy of everything you read, renders chapters with a
+native block renderer (no embedded browser), and speaks the chapter aloud with on-device neural
+text-to-speech.
 
 > **Disclaimer:** Master Reader is unofficial and not affiliated with any content provider.
-> It is intended for adults (18+). You are responsible for complying with the terms of
-> service of any source you configure.
+> It is intended for adults (18+). You are responsible for complying with the terms of service of
+> any source you use.
+
+## Features
+
+- **Seven built-in sources** — Literotica, NovelFire, Royal Road, Scribble Hub, NovelBuddy,
+  Pawchive and Kemono — behind one `Source` interface.
+- **Chapter-first reading.** A novel is a list of chapters, not a list of pages. Serials with
+  thousands of chapters are supported: the full chapter list is searchable and jump-to-chapter
+  works without loading the whole catalogue.
+- **Native reader.** Chapters render as native React Native blocks with a hairline rule, no
+  shadows and four reading themes (paper, sepia, slate, AMOLED). The system bars hide while you
+  read and the chrome fades after a few seconds.
+- **Offline-first.** SQLite is the source of truth. Metadata, listings, HTTP responses and
+  chapter content each have their own cache tier; downloads are pinned and never evicted.
+- **Narration.** On-device neural TTS (sherpa-onnx, Apache-2.0) with per-voice speed control,
+  sleep timer, chapter-windowed narration and exact highlight-to-text mapping.
+- **Updates feed.** A per-chapter feed of newly published chapters for the novels you follow.
+- **Downloads, backup and export.** Pinned offline downloads, versioned JSON backups with
+  merge/replace restore, CSV library export and EPUB export.
+- **FLOSS-only.** No Google Play Services, no Firebase, no proprietary analytics, no ads.
+
+## Screens
+
+| Tab         | Screen                                                   |
+| ----------- | -------------------------------------------------------- |
+| **Library** | Followed novels, reading progress, unread counts         |
+| **Updates** | Newly published chapters, grouped per novel              |
+| **Browse**  | Popular / latest / search across every source            |
+| **Audio**   | Now playing, transport, queue, recent narration sessions |
+| **More**    | History, downloads, sources, settings, backup, about     |
 
 ## Stack
 
@@ -24,169 +53,125 @@ Master Reader is a from-scratch replacement for the unmaintained
 | Files          | expo-file-system (SAF), expo-sharing, fflate             |
 | Localisation   | i18n-js + expo-localization                              |
 | Background     | expo-background-task + expo-task-manager                 |
-| Extensions     | react-native-webview JS sandbox + HTTP bridge            |
+| Narration      | sherpa-onnx (on-device neural TTS, Apache-2.0)           |
 
 ## Architecture
 
 ```
 src/
-  app/          routes: (tabs)/…, story/[sourceId]/[id], reader/[sourceId]/[id], downloads, restore, sources
-  components/   shared UI primitives and story list
+  app/          routes: (tabs)/…, story/[sourceId]/[id], reader/[sourceId]/[novelId]/[chapterId]
+  components/   shared UI primitives, reader blocks, audio player
   constants/    spacing, radii, fonts, layout tokens
   theme/        palettes (light/dark/AMOLED), reader palettes, theme provider
   hooks/        reusable hooks and TanStack Query wrappers
   db/           drizzle schema, migrations, repositories, mappers
-  sources/      Source interface, transport, Literotica impl, parsers
-  extensions/   runtime sandbox, protocol, runtime manager, source adapter
-  services/     catalog, library, history, reading, caches, downloads, backup, updates, source manager
-  stores/       zustand stores (settings, library, history, downloads, extensions)
+  narration/    TTS engine, chunking, highlight mapping, player estimates
+  sources/      Source interface, transport, per-provider implementations
+  services/     catalog, library, history, reading, caches, downloads, backup, export
+  stores/       zustand stores (settings, library, history, narration)
   tasks/        background task definitions
   i18n/         translator + English strings
-  utils/        html, hash, format, ids, time, reading positions, download sizing
+  utils/        html, hash, format, ids, time, reading positions
 fixtures/       recorded payloads for parser tests
+modules/        local Expo modules (sherpa-tts)
 ```
 
-The app is **Android-only** and **offline-first**: SQLite is the source of truth, with a
-separated metadata cache, HTTP cache and pinned download tier.
+The app is **Android-only** and **offline-first**: SQLite is the source of truth, with separated
+metadata, listing, HTTP and pinned download tiers.
 
 ## Sources
 
-Content sources implement the `Source` interface (`src/sources/types.ts`). The built-in
-Literotica source talks to their unofficial JSON API through a transport layer that handles
-rate limiting, timeouts, cookies and retry/backoff, and validates every payload with zod.
+Content sources implement the `Source` interface (`src/sources/types.ts`). Every provider ships
+as a built-in module, so there is no runtime plugin system and no third-party code executes in
+your app.
 
-**Credentials are never bundled.** If a source requires an app id/key pair, it is supplied at
-runtime and read from settings; anonymous browsing works without it.
+| Source       | Kind            | Notes                                 |
+| ------------ | --------------- | ------------------------------------- |
+| Literotica   | Story site      | JSON API, categories and tags         |
+| NovelFire    | Story site      | JSON API, categories                  |
+| Royal Road   | Story site      | Browser-backed HTML parsing           |
+| Scribble Hub | Story site      | Browser-backed HTML parsing           |
+| NovelBuddy   | Story site      | JSON API                              |
+| Pawchive     | Creator archive | Creator is a story, post is a chapter |
+| Kemono       | Creator archive | Creator is a story, post is a chapter |
 
-## Extensions
+Parsers are pure functions validated with zod and tested against recorded payloads in
+`fixtures/`. **Credentials are never bundled** — anything a source needs is supplied at runtime.
 
-Sources for other platforms can be added at runtime (ArcReader/Aidoku-style). Hermes has no
-`eval`, so extensions run in a **hidden WebView sandbox**; network requests are bridged back to
-the app so they go through the cached, rate-limited, offline-aware transport and never hit CORS.
-Install from a URL or by pasting code under Settings → Sources → Extensions.
+## Development
 
-```js
-registerSource({
-  id: 'com.example.source',
-  name: 'Example',
-  version: '1.0.0',
-  lang: 'en',
-  baseUrl: 'https://example.com',
-  capabilities: ['popular', 'latest', 'search', 'tags'],
-  async getPopular({ page }) {
-    const res = await host.request({ url: 'https://example.com/api', query: { page } });
-    return { page, hasNext: false, items: JSON.parse(res.text) };
-  },
-  // getLatest, search, getStory, getTags...
-});
-```
-
-See [docs/EXTENSIONS.md](./docs/EXTENSIONS.md) for the full API and
-[docs/examples/example-source.js](./docs/examples/example-source.js) for a complete example.
-
-## Caching & offline
-
-Three independent tiers, all persisted in SQLite:
-
-1. **HTTP response cache** — the transport stores GET responses with ETag/Last-Modified and
-   revalidates conditionally (304 reuses the body). Fresh entries are served without a network
-   call; stale entries are served when the network fails.
-2. **Listing cache** — browse and search pages are stored with their story order and a TTL, so
-   previously viewed listings remain browsable offline.
-3. **Page/metadata cache** — story metadata and page content persist as they are read; the
-   reader always prefers cached content.
-
-**Offline mode** (Settings → Advanced) short-circuits all network access: reads are served from
-cache and `OfflineError` is raised for anything not yet cached. Expired entries are pruned on
-startup, and Settings → Storage can clear cached data without touching the library.
-
-## Downloads
-
-Downloads are a **pinned tier** that cache sweeps never touch. A download queues a story, fetches
-and persists every page, and records page count and byte size. The queue runs one story at a time
-with status transitions `queued → downloading → completed | failed`; failures can be retried and
-entries removed (which also deletes their pages). The Downloads screen (Library top-right, or
-Settings → Storage) lists items with sizes and total storage use.
-
-## Backup & restore
-
-Backups are versioned, gzipped JSON (`master-reader-backup-<timestamp>.json.gz`) containing the
-library, referenced story metadata, reading progress, history, sources and settings — downloads
-are intentionally excluded (they can be re-fetched).
-
-- **Auto backup** writes to a folder you pick via the Android Storage Access Framework when the
-  configured interval has elapsed, keeping the newest N files.
-- **Manual export** shares a snapshot, and the library can be exported as CSV.
-- **Restore** (Settings → Backup → Restore) supports `merge`, `replace` and `skip` modes, and
-  validates the file shape before applying anything.
-
-## Localisation, updates & age gate
-
-- **Localisation**: all user-facing strings live in `src/i18n/en.json` and are read through `t()`
-  (`src/i18n`). The device language is detected with `expo-localization` and falls back to English.
-- **Background updates**: when enabled, `expo-background-task` periodically refreshes library story
-  metadata through the cached transport. Settings → Advanced also offers a manual check.
-- **Theming**: light/dark/AMOLED palettes drive the navigation theme, status bar and Android
-  navigation bar; the reader keeps the screen awake while open.
-- **Age gate**: the app requires an explicit 18+ confirmation on first launch before any content
-  is shown.
-
-## Requirements
+### Requirements
 
 - Node.js 24+
-- Android SDK / an Android device or emulator
+- JDK 17
+- Android SDK (`ANDROID_HOME` set) and a device or emulator
 
-## Scripts
+### Getting started
 
 ```bash
-npm install          # install dependencies
-npm start            # start the Expo dev server
-npm run android      # launch on an Android device/emulator
-npm run typecheck    # tsc --noEmit
-npm run lint         # eslint (expo lint)
-npm run format       # prettier --write
-npm run test         # vitest run
-npm run db:generate  # generate a migration from src/db/schema.ts
-npm run db:check     # validate migration history
-npm run verify       # typecheck + lint + test (mirrors CI)
-npx expo prebuild --platform android   # generate the native project
+npm install           # install dependencies
+npm start             # start the Expo dev server
+npm run android       # build and launch on a device/emulator
+```
+
+### Checks
+
+```bash
+npm run typecheck     # tsc --noEmit
+npm run lint          # eslint (expo lint)
+npm run format        # prettier --write
+npm run format:check  # prettier --check
+npm run test          # vitest run
+npm run db:generate   # generate a migration from src/db/schema.ts
+npm run verify        # typecheck + lint + test (mirrors CI)
+```
+
+## Building an APK
+
+The native project is generated by `expo prebuild` and is not committed. Releases are built from
+source in CI — never with EAS.
+
+```bash
+npm run build:android          # prebuild + assembleRelease + ABI verification
+npm run build:android:debug    # same, debug variant
+npm run verify:apk -- <apk>    # check the native libraries inside an APK
+```
+
+`scripts/android/build-release.sh` always compiles **every** supported ABI
+(`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`) and then runs
+`scripts/android/verify-apk.sh`, which fails the build if any ABI is missing a required native
+library. A partial build otherwise installs cleanly and crashes on launch with
+`NoClassDefFoundError: expo.modules.kotlin.jni.MainRuntimeInstaller`.
+
+To build a single ABI for local testing, pass it explicitly and expect the verification step to
+reject the result:
+
+```bash
+ANDROID_ARCHITECTURES=arm64-v8a npm run build:android
 ```
 
 ## Releasing
 
-Releases are built from source in CI (`expo prebuild` + Gradle), not via EAS.
-
-- [docs/RELEASING.md](./docs/RELEASING.md) — signing keys, cutting a release, local builds.
+- [docs/RELEASING.md](./docs/RELEASING.md) — signing keys, cutting a release.
 - [docs/FDROID.md](./docs/FDROID.md) — publishing the self-hosted F-Droid repository.
 
-Tag a commit (`git tag v0.2.0 && git push origin v0.2.0`) to trigger the `Release` workflow,
-which verifies, builds, aligns and signs the APK, and publishes it with release notes.
+Tag a commit and push the tag to trigger the `Release` workflow, which verifies, builds, checks
+the ABIs, aligns, signs and publishes the APK with release notes:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
 
 ## Distribution constraints
 
-Master Reader targets **GitHub Releases** plus a **self-hosted F-Droid repository**. It is
-_not_ eligible for the main F-Droid repository (adult content) or any store with
-restrictive content policies. The build therefore must stay FLOSS-only:
+Master Reader targets **GitHub Releases** plus a **self-hosted F-Droid repository**. It is _not_
+eligible for the main F-Droid repository (adult content) or any store with restrictive content
+policies. The build therefore must stay FLOSS-only:
 
 - No Google Play Services, Firebase, Crashlytics or proprietary analytics.
 - No silent over-the-air code updates (`expo-updates`) unless self-hosted and opt-in.
 - No bundling of third-party trademarks or provider credentials.
 
-## Roadmap
-
-| Phase | Scope                                                                       |
-| ----- | --------------------------------------------------------------------------- |
-| 0 ✅  | Scaffold, tooling, CI, design tokens, tab shell                             |
-| 1 ✅  | SQLite + Drizzle schema, migrations, repositories, settings store           |
-| 2 ✅  | `Source` interface, HTTP transport, Literotica implementation, parser tests |
-| 3 ✅  | Library, browse, search, story detail, reader, progress, history            |
-| 4 ✅  | Cache tiers + offline mode                                                  |
-| 5 ✅  | Download queue + storage management                                         |
-| 6 ✅  | Backup/restore + SAF auto-backup                                            |
-| 7 ✅  | Background updates, i18n, theming, age gate                                 |
-| 8 ✅  | Release engineering (Gradle APK in CI, GitHub Releases, F-Droid repo)       |
-| 9 ✅  | Runtime JS extension system                                                 |
-
 ## License
 
-MIT — see [LICENSE](./LICENSE). _(Placeholder copyright holder; update before first release.)_
+MIT — see [LICENSE](./LICENSE).

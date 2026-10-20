@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing } from '@/constants/theme';
+import { MinTouchTarget, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { ThemePalette } from '@/theme';
 
@@ -22,6 +22,7 @@ export type ButtonProps = {
   loading?: boolean;
   icon?: keyof typeof Ionicons.glyphMap;
   style?: StyleProp<ViewStyle>;
+  accessibilityLabel?: string;
 };
 
 export function Button({
@@ -32,6 +33,7 @@ export function Button({
   loading,
   icon,
   style,
+  accessibilityLabel,
 }: ButtonProps) {
   const theme = useTheme();
   const colors = variantColors(variant, theme);
@@ -42,6 +44,7 @@ export function Button({
       onPress={onPress}
       disabled={isDisabled}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: isDisabled }}
       style={({ pressed }) => [
         styles.base,
@@ -77,7 +80,7 @@ function variantColors(
     case 'ghost':
       return { background: 'transparent', foreground: theme.primary, border: 'transparent' };
     case 'danger':
-      return { background: theme.danger, foreground: '#FFFFFF', border: theme.danger };
+      return { background: theme.danger, foreground: theme.primaryText, border: theme.danger };
   }
 }
 
@@ -87,6 +90,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.two,
+    minHeight: MinTouchTarget,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two + 2,
     borderRadius: Radius.medium,

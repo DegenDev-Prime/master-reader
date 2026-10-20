@@ -44,18 +44,23 @@ export const Spacing = {
   half: 2,
   one: 4,
   two: 8,
+  twoHalf: 12,
   three: 16,
   four: 24,
   five: 32,
+  fiveHalf: 48,
   six: 64,
 } as const;
 
 export const Radius = {
-  small: 6,
-  medium: 10,
-  large: 16,
-  full: 999,
+  small: 0,
+  medium: 0,
+  large: 0,
+  full: 0,
 } as const;
+
+/** Minimum hit area for any pressable control (WCAG 2.5.5). */
+export const MinTouchTarget = 48;
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;

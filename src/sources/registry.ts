@@ -1,4 +1,10 @@
+import { createKemonoSource } from './archive/kemono';
+import { createPawchiveSource } from './archive/pawchive';
 import { createLiteroticaSource } from './literotica';
+import { createNovelBuddySource } from './novelbuddy';
+import { createNovelFireSource } from './novelfire';
+import { createRoyalRoadSource } from './royalroad';
+import { createScribbleHubSource } from './scribblehub';
 import type { Source } from './types';
 
 export class SourceRegistry {
@@ -26,6 +32,12 @@ export class SourceRegistry {
 /** Creates a registry with the built-in sources registered. */
 export function createSourceRegistry(): SourceRegistry {
   const registry = new SourceRegistry();
+  registry.register(createKemonoSource());
   registry.register(createLiteroticaSource());
+  registry.register(createPawchiveSource());
+  registry.register(createNovelBuddySource());
+  registry.register(createNovelFireSource());
+  registry.register(createRoyalRoadSource());
+  registry.register(createScribbleHubSource());
   return registry;
 }

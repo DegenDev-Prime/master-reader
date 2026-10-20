@@ -46,6 +46,8 @@ export type StoryPage = {
   storyId: string;
   index: number;
   title?: string | null;
+  /** Provider chapter id/path for lazy chapter-content loading. */
+  id?: string | null;
   content?: string | null;
   wordCount?: number | null;
 };
@@ -78,6 +80,9 @@ export type ReadingProgress = {
   sourceId: string;
   storyId: string;
   pageIndex: number;
+  chapterId?: string | null;
+  paragraphIndex?: number | null;
+  charOffset?: number | null;
   pageCount?: number | null;
   scrollPct: number;
   readPages?: number[];
@@ -90,6 +95,8 @@ export type HistoryEntry = {
   sourceId: string;
   storyId: string;
   pageIndex: number;
+  chapterId?: string | null;
+  paragraphIndex?: number | null;
   durationMs?: number | null;
   /** unix seconds */
   readAt: number;

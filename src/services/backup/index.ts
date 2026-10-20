@@ -7,6 +7,8 @@ import {
   downloadsRepository,
   historyRepository,
   libraryRepository,
+  narrationBookmarksRepository,
+  narrationRepository,
   pagesRepository,
   progressRepository,
   settingsRepository,
@@ -67,14 +69,17 @@ export async function createBackupData(
   const wantStories = selected.has('stories');
   const wantDownloads = selected.has('downloads');
 
-  const [library, progress, history, settings, sources, downloads] = await Promise.all([
-    wantMeta ? libraryRepository.listEntries() : Promise.resolve([]),
-    wantMeta ? progressRepository.listAll() : Promise.resolve([]),
-    wantHistory ? historyRepository.listAll() : Promise.resolve([]),
-    wantMeta ? settingsRepository.getAll() : Promise.resolve({}),
-    wantMeta ? sourcesRepository.list() : Promise.resolve([]),
-    wantDownloads ? downloadsRepository.list() : Promise.resolve([]),
-  ]);
+  const [library, progress, history, settings, sources, downloads, narration, narrationBookmarks] =
+    await Promise.all([
+      wantMeta ? libraryRepository.listEntries() : Promise.resolve([]),
+      wantMeta ? progressRepository.listAll() : Promise.resolve([]),
+      wantHistory ? historyRepository.listAll() : Promise.resolve([]),
+      wantMeta ? settingsRepository.getAll() : Promise.resolve({}),
+      wantMeta ? sourcesRepository.list() : Promise.resolve([]),
+      wantDownloads ? downloadsRepository.list() : Promise.resolve([]),
+      wantMeta ? narrationRepository.listAll() : Promise.resolve([]),
+      wantMeta ? narrationBookmarksRepository.listAll() : Promise.resolve([]),
+    ]);
 
   const keys = new Set<string>();
   if (wantMeta) {
@@ -107,6 +112,8 @@ export async function createBackupData(
     history,
     pages,
     downloads,
+    narration,
+    narrationBookmarks,
     settings,
     sources: sources as unknown as Record<string, unknown>[],
   };
@@ -265,6 +272,8 @@ export async function restoreBackup(
     await libraryRepository.clear();
     await progressRepository.clear();
     await historyRepository.clear();
+    await narrationRepository.clear();
+    await narrationBookmarksRepository.clear();
   }
 
   for (const entry of envelope.data.library) {
@@ -288,6 +297,29 @@ export async function restoreBackup(
 
   for (const item of envelope.data.history) {
     await historyRepository.upsert(item);
+    counts.imported += 1;
+  }
+
+  for (const state of envelope.data.narration) {
+    const existing = await narrationRepository.get(state.sourceId, state.storyId);
+    if (shouldImport(Boolean(existing), mode)) {
+      await narrationRepository.save({
+        sourceId: state.sourceId,
+        storyId: state.storyId,
+        engine: state.engine ?? 'system',
+        voiceId: state.voiceId ?? null,
+        speed: state.speed ?? 1,
+        chunkIndex: state.chunkIndex ?? 0,
+        charOffset: state.charOffset ?? 0,
+      });
+      counts.imported += 1;
+    } else {
+      counts.skipped += 1;
+    }
+  }
+
+  for (const bookmark of envelope.data.narrationBookmarks) {
+    await narrationBookmarksRepository.upsert(bookmark);
     counts.imported += 1;
   }
 

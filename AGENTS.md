@@ -52,10 +52,12 @@ ALWAYS run `npm run verify` after making changes.
 - Releases are built from source with `expo prebuild` + Gradle (no EAS). Do not commit `android/`
   or `ios/`; they are generated. Keep the app FLOSS-only (see Distribution constraints) and bump
   `app.json` `version` for releases.
-- Extensions (`src/extensions/*`) run third-party JS in a hidden WebView because Hermes has no
-  `eval`. Keep `manifest.ts`, `protocol.ts` and `source.ts` pure (`@/db`-free) so they stay
-  unit-testable; the runtime bridge in `http.ts` owns network access. Sandboxes are mounted by
-  `ExtensionHost`, and extension sources are registered through `src/extensions/sources.ts`.
+- Sources are built-in modules under `src/sources/*`. There is no runtime plugin system: no
+  third-party code executes in the app. Add a source by implementing `Source`
+  (`src/sources/types.ts`) and registering it in `src/sources/registry.ts`.
+- A release APK must contain every supported ABI. `npm run build:android` compiles all of them
+  and `scripts/android/verify-apk.sh` fails the build if a native library is missing, so a
+  partial Gradle build never ships.
 
 ## Hard constraints (distribution)
 

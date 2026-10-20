@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { t } from '@/i18n';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -24,14 +25,14 @@ export function AppBar({ title, subtitle, onBack, right }: AppBarProps) {
           hitSlop={12}
           style={styles.iconButton}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('common.back')}
         >
           <Ionicons name="chevron-back" size={24} color={theme.text} />
         </Pressable>
       ) : null}
 
       <View style={styles.titles}>
-        <ThemedText type="heading" numberOfLines={1}>
+        <ThemedText type="heading" numberOfLines={1} accessibilityRole="header">
           {title}
         </ThemedText>
         {subtitle ? (

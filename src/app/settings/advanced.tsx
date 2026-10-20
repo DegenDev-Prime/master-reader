@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch } from 'react-native';
 
@@ -11,8 +10,10 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { updateLibrary } from '@/services/library-updater';
 import { useSettingsStore } from '@/stores/settings';
+import { useBackToParent } from '@/navigation/use-parent-back';
 
 export default function AdvancedSettingsScreen() {
+  const backToParent = useBackToParent();
   const theme = useTheme();
   const settings = useSettingsStore((state) => state.settings);
   const setSetting = useSettingsStore((state) => state.setSetting);
@@ -35,7 +36,10 @@ export default function AdvancedSettingsScreen() {
 
   return (
     <Screen>
-      <AppBar title={t('settings.advanced')} onBack={() => router.back()} />
+      <AppBar
+        title={t('settings.advanced')}
+        onBack={() => backToParent({ pathname: '/settings' })}
+      />
       <ScrollView contentContainerStyle={styles.content}>
         <Section title={t('settings.advanced')}>
           <Row

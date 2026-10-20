@@ -17,7 +17,7 @@ export function EmptyState({ icon = 'book-outline', title, message, action }: Em
   const theme = useTheme();
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} accessibilityLiveRegion="polite">
       <Ionicons name={icon} size={44} color={theme.textMuted} />
       <ThemedText type="heading" style={styles.center}>
         {title}

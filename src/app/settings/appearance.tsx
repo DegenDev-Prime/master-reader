@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { t } from '@/i18n';
@@ -9,6 +8,7 @@ import { Section } from '@/components/ui/section';
 import { Spacing } from '@/constants/theme';
 import { useSettingsStore } from '@/stores/settings';
 import type { ThemePreference } from '@/theme';
+import { useBackToParent } from '@/navigation/use-parent-back';
 
 const THEMES: { value: ThemePreference; label: string }[] = [
   { value: 'system', label: t('settings.theme.system') },
@@ -18,12 +18,16 @@ const THEMES: { value: ThemePreference; label: string }[] = [
 ];
 
 export default function AppearanceSettingsScreen() {
+  const backToParent = useBackToParent();
   const settings = useSettingsStore((state) => state.settings);
   const setSetting = useSettingsStore((state) => state.setSetting);
 
   return (
     <Screen>
-      <AppBar title={t('settings.appearance')} onBack={() => router.back()} />
+      <AppBar
+        title={t('settings.appearance')}
+        onBack={() => backToParent({ pathname: '/settings' })}
+      />
       <ScrollView contentContainerStyle={styles.content}>
         <Section title={t('settings.appearance')}>
           <View style={styles.chips}>

@@ -5,15 +5,28 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export function Section({ title, children }: { title?: string; children: ReactNode }) {
+export function Section({
+  title,
+  description,
+  children,
+}: {
+  title?: string;
+  description?: string;
+  children: ReactNode;
+}) {
   const theme = useTheme();
 
   return (
     <View style={styles.section}>
       {title ? (
-        <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionTitle}>
-          {title.toUpperCase()}
-        </ThemedText>
+        <View style={styles.sectionHeader}>
+          <ThemedText type="eyebrow">{title}</ThemedText>
+          {description ? (
+            <ThemedText type="small" themeColor="textSecondary">
+              {description}
+            </ThemedText>
+          ) : null}
+        </View>
       ) : null}
       <View
         style={[
@@ -55,9 +68,9 @@ export function Row({
 
 const styles = StyleSheet.create({
   section: { gap: Spacing.two },
-  sectionTitle: { marginLeft: Spacing.one },
+  sectionHeader: { marginLeft: Spacing.one, gap: Spacing.half },
   card: {
-    borderRadius: 12,
+    borderRadius: 0,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },

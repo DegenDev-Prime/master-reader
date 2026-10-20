@@ -22,6 +22,34 @@
       "when": 1790029585443,
       "tag": "0002_square_mongoose",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790084321249,
+      "tag": "0003_groovy_praxagora",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791138204694,
+      "tag": "0004_uneven_blackheart",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792411231565,
+      "tag": "0005_large_prodigy",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792493842124,
+      "tag": "0006_curved_moon_knight",
+      "breakpoints": true
     }
   ]
 }

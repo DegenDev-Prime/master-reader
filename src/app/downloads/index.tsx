@@ -1,171 +1,211 @@
-import { router } from 'expo-router';
-import { useEffect, useMemo } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { t } from '@/i18n';
-import { DownloadListItem } from '@/components/download-list-item';
-import { ThemedText } from '@/components/themed-text';
 import { AppBar } from '@/components/ui/app-bar';
-import { Button } from '@/components/ui/button';
+import { Cover } from '@/components/ui/cover';
 import { EmptyState } from '@/components/ui/empty-state';
+import { LoadingView } from '@/components/ui/loading';
 import { Screen } from '@/components/ui/screen';
-import { Radius, Spacing } from '@/constants/theme';
+import { ThemedText } from '@/components/themed-text';
+import { Spacing } from '@/constants/theme';
+import { chapterDownloadsRepository } from '@/db/repositories/chapter-downloads';
+import { chapterRepository } from '@/db/repositories/chapters';
+import { downloadsRepository } from '@/db/repositories/downloads';
+import { libraryRepository, type LibraryNovel } from '@/db/repositories/library';
 import { useTheme } from '@/hooks/use-theme';
-import { openStory } from '@/navigation/routes';
-import {
-  downloadItemsBytes,
-  groupDownloadItems,
-  type DownloadItem,
-  type DownloadSeriesGroup,
-} from '@/services/downloads';
-import { useDownloadsStore } from '@/stores/downloads';
 import { formatBytes } from '@/utils/format';
+import { useBackToParent } from '@/navigation/use-parent-back';
 
-type Row =
-  | { kind: 'series'; group: DownloadSeriesGroup }
-  | { kind: 'item'; item: DownloadItem };
+type Row = LibraryNovel & { bytes: number };
 
 export default function DownloadsScreen() {
+  const backToParent = useBackToParent();
   const theme = useTheme();
-  const items = useDownloadsStore((state) => state.items);
-  const refresh = useDownloadsStore((state) => state.refresh);
-  const remove = useDownloadsStore((state) => state.remove);
-  const retry = useDownloadsStore((state) => state.retry);
-  const process = useDownloadsStore((state) => state.process);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    void refresh().then(() => process());
-  }, [refresh, process]);
+  const load = useCallback(async () => {
+    const items = await libraryRepository.listNovels();
+    const downloaded = items.filter((item) => item.novel && item.counts.downloaded > 0);
+    const withBytes = await Promise.all(
+      downloaded.map(async (item) => {
+        const counts = await chapterDownloadsRepository.counts(
+          item.entry.sourceId,
+          item.entry.storyId,
+        );
+        return { ...item, bytes: counts.bytes };
+      }),
+    );
+    setRows(withBytes);
+    setLoading(false);
+  }, []);
 
-  const rows = useMemo<Row[]>(() => {
-    const { series, standalone } = groupDownloadItems(items);
-    return [
-      ...series.map((group) => ({ kind: 'series' as const, group })),
-      ...standalone.map((item) => ({ kind: 'item' as const, item })),
-    ];
-  }, [items]);
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
-  const completed = items.filter((item) => item.download.status === 'completed');
-  const totalBytes = downloadItemsBytes(completed);
+  const summary = useMemo(() => {
+    return rows.reduce(
+      (total, row) => ({
+        chapters: total.chapters + row.counts.downloaded,
+        bytes: total.bytes + row.bytes,
+      }),
+      { chapters: 0, bytes: 0 },
+    );
+  }, [rows]);
 
-  const confirmClear = () => {
-    Alert.alert(t('downloads.clearTitle'), t('downloads.clearMessage'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('common.clear'),
-        style: 'destructive',
-        onPress: () => {
-          for (const item of completed) {
-            void remove(item.download.sourceId, item.download.storyId);
-          }
-        },
-      },
-    ]);
-  };
+  const remove = useCallback(
+    (row: Row) => {
+      if (!row.novel) return;
+      Alert.alert(
+        t('downloads.removeTitle'),
+        t('downloads.removeMessage', {
+          count: row.counts.downloaded,
+          size: formatBytes(row.bytes),
+        }),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('download.delete'),
+            style: 'destructive',
+            onPress: () => {
+              void (async () => {
+                await chapterDownloadsRepository.remove(row.novel!.sourceId, row.novel!.id);
+                await chapterRepository.removeContent(row.novel!.sourceId, row.novel!.id);
+                await downloadsRepository.remove(row.novel!.sourceId, row.novel!.id);
+                await load();
+              })();
+            },
+          },
+        ],
+      );
+    },
+    [load],
+  );
 
   return (
     <Screen>
-      <AppBar
-        title={t('downloads.title')}
-        subtitle={
-          items.length > 0
-            ? t('downloads.summary', { count: items.length, size: formatBytes(totalBytes) })
-            : undefined
-        }
-        onBack={() => router.back()}
-        right={
-          completed.length > 0 ? (
-            <Button variant="ghost" title={t('common.clear')} onPress={confirmClear} />
-          ) : null
-        }
-      />
-
-      {items.length === 0 ? (
+      <AppBar title={t('downloads.title')} onBack={() => backToParent({ pathname: '/' })} />
+      {loading ? (
+        <LoadingView label={t('common.loading')} />
+      ) : rows.length === 0 ? (
         <EmptyState
-          icon="download-outline"
+          icon="cloud-download-outline"
           title={t('downloads.emptyTitle')}
           message={t('downloads.emptyMessage')}
         />
       ) : (
         <FlatList
           data={rows}
-          keyExtractor={(row) =>
-            row.kind === 'series'
-              ? `series:${row.group.seriesId}`
-              : `${row.item.download.sourceId}:${row.item.download.storyId}`
-          }
-          renderItem={({ item: row }) =>
-            row.kind === 'series' ? (
-              <SeriesRow group={row.group} onPress={() => router.push(`/downloads/series/${row.group.seriesId}`)} />
-            ) : (
-              <DownloadListItem
-                item={row.item}
-                onOpen={() => openStory(row.item.download.sourceId, row.item.download.storyId)}
-                onRetry={() => void retry(row.item.download.sourceId, row.item.download.storyId)}
-                onDelete={() => void remove(row.item.download.sourceId, row.item.download.storyId)}
-              />
-            )
-          }
-          ItemSeparatorComponent={() => (
-            <View style={[styles.separator, { backgroundColor: theme.border }]} />
-          )}
+          keyExtractor={(row) => `${row.entry.sourceId}:${row.entry.storyId}`}
           contentContainerStyle={styles.content}
+          ListHeaderComponent={
+            <View style={[styles.summary, { borderColor: theme.border }]}>
+              <View style={styles.stat}>
+                <ThemedText type="heading">{rows.length}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {t('downloads.storiesStat')}
+                </ThemedText>
+              </View>
+              <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
+              <View style={styles.stat}>
+                <ThemedText type="heading">{summary.chapters}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {t('common.chapters')}
+                </ThemedText>
+              </View>
+              <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
+              <View style={styles.stat}>
+                <ThemedText type="heading">{formatBytes(summary.bytes)}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {t('downloads.sizeStat')}
+                </ThemedText>
+              </View>
+            </View>
+          }
+          renderItem={({ item }) => {
+            const novel = item.novel;
+            if (!novel) return null;
+            return (
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: '/story/[sourceId]/[id]',
+                    params: { sourceId: novel.sourceId, id: novel.id },
+                  })
+                }
+                accessibilityRole="button"
+                accessibilityLabel={novel.title}
+                style={({ pressed }) => [
+                  styles.row,
+                  {
+                    backgroundColor: pressed ? theme.backgroundSelected : theme.background,
+                    borderBottomColor: theme.border,
+                  },
+                ]}
+              >
+                <Cover uri={novel.coverUrl} title={novel.title} width={48} />
+                <View style={styles.rowText}>
+                  <ThemedText type="bodyStrong" numberOfLines={2}>
+                    {novel.title}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {t('downloads.completedOf', {
+                      done: item.counts.downloaded,
+                      total: item.counts.total,
+                    })}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textMuted">
+                    {formatBytes(item.bytes)}
+                  </ThemedText>
+                </View>
+                <Pressable
+                  onPress={() => remove(item)}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('download.delete')}
+                  style={styles.delete}
+                >
+                  <Ionicons name="trash-outline" size={20} color={theme.textMuted} />
+                </Pressable>
+                <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+              </Pressable>
+            );
+          }}
         />
       )}
     </Screen>
   );
 }
 
-function SeriesRow({ group, onPress }: { group: DownloadSeriesGroup; onPress: () => void }) {
-  const theme = useTheme();
-  const total = group.items.length;
-  const done = group.items.filter((item) => item.download.status === 'completed').length;
-
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      style={({ pressed }) => [
-        styles.seriesRow,
-        pressed && { backgroundColor: theme.backgroundElement },
-      ]}
-    >
-      <View style={styles.seriesBody}>
-        <ThemedText type="default" numberOfLines={2} style={styles.seriesTitle}>
-          {group.title}
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-          {t('downloads.chapters', { count: total })} · {formatBytes(downloadItemsBytes(group.items))}
-        </ThemedText>
-        <ThemedText type="small" themeColor="textMuted" numberOfLines={1}>
-          {t('downloads.completedOf', { done, total })}
-        </ThemedText>
-      </View>
-      <View style={[styles.seriesBadge, { borderColor: theme.border }]}>
-        <ThemedText type="small" themeColor="textSecondary">
-          {t('common.open')}
-        </ThemedText>
-      </View>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  separator: { height: StyleSheet.hairlineWidth, marginLeft: Spacing.three },
   content: { paddingBottom: Spacing.six },
-  seriesRow: {
+  summary: {
+    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
+    margin: Spacing.three,
+    paddingVertical: Spacing.three,
+  },
+  stat: { alignItems: 'center', flex: 1, gap: 2 },
+  statDivider: { width: StyleSheet.hairlineWidth },
+  row: {
     alignItems: 'center',
-    gap: Spacing.two,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: Spacing.three,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
   },
-  seriesBody: { flex: 1, gap: Spacing.half },
-  seriesTitle: { fontWeight: '600' },
-  seriesBadge: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: Radius.small,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one,
+  rowText: { flex: 1, gap: Spacing.one },
+  delete: {
+    alignItems: 'center',
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
   },
 });

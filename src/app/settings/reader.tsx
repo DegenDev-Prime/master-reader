@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { t } from '@/i18n';
@@ -8,8 +7,14 @@ import { Row, Section } from '@/components/ui/section';
 import { Screen } from '@/components/ui/screen';
 import { Stepper } from '@/components/ui/stepper';
 import { Spacing } from '@/constants/theme';
-import type { ReaderFontFamily, ReaderPagination, ReaderSettings, ReaderThemeName } from '@/services/settings';
+import type {
+  ReaderFontFamily,
+  ReaderPagination,
+  ReaderSettings,
+  ReaderThemeName,
+} from '@/services/settings';
 import { useSettingsStore } from '@/stores/settings';
+import { useBackToParent } from '@/navigation/use-parent-back';
 
 const READER_THEMES: { value: ReaderThemeName; label: string }[] = [
   { value: 'light', label: t('settings.readerTheme.light') },
@@ -35,6 +40,7 @@ const PAGINATION: { value: ReaderPagination; label: string }[] = [
 ];
 
 export default function ReaderSettingsScreen() {
+  const backToParent = useBackToParent();
   const settings = useSettingsStore((state) => state.settings);
   const setSetting = useSettingsStore((state) => state.setSetting);
 
@@ -44,7 +50,7 @@ export default function ReaderSettingsScreen() {
 
   return (
     <Screen>
-      <AppBar title={t('settings.reader')} onBack={() => router.back()} />
+      <AppBar title={t('settings.reader')} onBack={() => backToParent({ pathname: '/settings' })} />
       <ScrollView contentContainerStyle={styles.content}>
         <Section title={t('settings.readerTheme.light') + ' / ' + t('settings.readerTheme.dark')}>
           <View style={styles.chips}>
@@ -89,12 +95,18 @@ export default function ReaderSettingsScreen() {
                 step={0.1}
                 onDecrease={() =>
                   updateReader({
-                    lineHeight: Math.max(1.2, Math.round((settings.reader.lineHeight - 0.1) * 10) / 10),
+                    lineHeight: Math.max(
+                      1.2,
+                      Math.round((settings.reader.lineHeight - 0.1) * 10) / 10,
+                    ),
                   })
                 }
                 onIncrease={() =>
                   updateReader({
-                    lineHeight: Math.min(2.4, Math.round((settings.reader.lineHeight + 0.1) * 10) / 10),
+                    lineHeight: Math.min(
+                      2.4,
+                      Math.round((settings.reader.lineHeight + 0.1) * 10) / 10,
+                    ),
                   })
                 }
               />
@@ -122,6 +134,30 @@ export default function ReaderSettingsScreen() {
                     onPress={() => updateReader({ pagination: option.value })}
                   />
                 ))}
+              </View>
+            }
+          />
+          <Row
+            label={t('reader.reduceAnimation')}
+            description={t('reader.reduceAnimationDescription')}
+            right={
+              <View
+                accessibilityRole="radiogroup"
+                accessibilityLabel={t('reader.reduceAnimation')}
+                style={styles.chipsInline}
+              >
+                <Chip
+                  label={t('reader.toggleOn')}
+                  role="radio"
+                  selected={settings.reader.reducePageAnimation}
+                  onPress={() => updateReader({ reducePageAnimation: true })}
+                />
+                <Chip
+                  label={t('reader.toggleOff')}
+                  role="radio"
+                  selected={!settings.reader.reducePageAnimation}
+                  onPress={() => updateReader({ reducePageAnimation: false })}
+                />
               </View>
             }
           />

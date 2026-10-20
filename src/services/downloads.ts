@@ -1,14 +1,11 @@
 import { downloadsRepository, pagesRepository, storiesRepository } from '@/db/repositories';
 import type { Download, Story } from '@/models/story';
 import { computeStorySizeBytes } from '@/utils/download';
-import {
-  downloadItemsBytes,
-  groupDownloadItems,
-  type DownloadItem,
-} from '@/utils/download-groups';
+import { downloadItemsBytes, groupDownloadItems, type DownloadItem } from '@/utils/download-groups';
 import { nowSeconds } from '@/utils/time';
 
-import { getStoryPages } from './catalog';
+import { ensurePageContents } from './catalog';
+import { getSource } from './source-manager';
 
 export type { DownloadItem, DownloadSeriesGroup } from '@/utils/download-groups';
 export { downloadItemsBytes, groupDownloadItems };
@@ -61,6 +58,23 @@ export async function getNextQueued(): Promise<Download | null> {
 }
 
 /**
+ * An interrupted download is left in `downloading` by an app kill; nothing owns
+ * it on the next launch, and `enqueueDownload` refuses such rows. Re-queue them
+ * once at startup so the worker picks them back up. Called before any worker
+ * starts, when no in-flight run can be clobbered.
+ */
+export async function recoverInterruptedDownloads(): Promise<number> {
+  const stuck = await downloadsRepository.listByStatus('downloading');
+  for (const entry of stuck) {
+    await downloadsRepository.upsert({
+      ...entry,
+      status: 'queued',
+    });
+  }
+  return stuck.length;
+}
+
+/**
  * Downloads every page of a story, pinning the content and recording the size.
  * Status transitions: queued -> downloading -> completed | failed.
  */
@@ -74,7 +88,15 @@ export async function runDownload(sourceId: string, storyId: string): Promise<Do
   });
 
   try {
-    const pages = await getStoryPages(sourceId, storyId);
+    const pages = await ensurePageContents(sourceId, storyId, (done, total) => {
+      void downloadsRepository.upsert({
+        sourceId,
+        storyId,
+        status: 'downloading',
+        downloadedPages: done,
+        totalPages: total,
+      });
+    });
     if (pages.length === 0) {
       throw new Error('No content available to download');
     }
@@ -129,6 +151,32 @@ export async function retryDownload(sourceId: string, storyId: string): Promise<
 
 export async function getDownload(sourceId: string, storyId: string): Promise<Download | null> {
   return downloadsRepository.get(sourceId, storyId);
+}
+
+/**
+ * Downloads a single chapter's content and caches it in the pages table.
+ * Used for selective per-chapter downloads of multi-chapter novels.
+ * Returns true when content was newly fetched, false when already cached or unavailable.
+ */
+export async function downloadChapter(
+  sourceId: string,
+  storyId: string,
+  index: number,
+): Promise<boolean> {
+  const pages = await pagesRepository.listForStory(sourceId, storyId);
+  const page = pages.find((entry) => entry.index === index);
+  if (!page) return false;
+  if (page.content) return true;
+
+  const source = getSource(sourceId);
+  if (!source.getChapterContent || !page.id) return false;
+
+  const content = await source.getChapterContent(storyId, page.id);
+  if (content != null) {
+    await pagesRepository.upsertMany([{ ...page, content }]);
+    return true;
+  }
+  return false;
 }
 
 export async function totalDownloadBytes(): Promise<number> {

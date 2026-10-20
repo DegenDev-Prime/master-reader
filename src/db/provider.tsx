@@ -3,7 +3,6 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { runAutoBackupIfDue } from '@/services/backup';
 import { pruneExpiredCaches } from '@/services/cache';
-import { useExtensionsStore } from '@/stores/extensions';
 import { useSettingsStore } from '@/stores/settings';
 
 import { initDatabase } from './client';
@@ -25,7 +24,6 @@ export function DatabaseGate({ children }: { children: ReactNode }) {
       try {
         await initDatabase();
         await useSettingsStore.getState().hydrate();
-        await useExtensionsStore.getState().hydrate();
         if (!cancelled) setStatus('ready');
 
         // Reclaim space from stale cache entries without blocking startup.

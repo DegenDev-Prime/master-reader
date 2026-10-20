@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
@@ -11,6 +10,7 @@ import { Screen } from '@/components/ui/screen';
 import { Row, Section } from '@/components/ui/section';
 import { Spacing } from '@/constants/theme';
 import { importBackupFromFile, pickBackupFile, type RestoreMode } from '@/services/backup';
+import { useBackToParent } from '@/navigation/use-parent-back';
 
 const MODES: { value: RestoreMode; label: string; description: string }[] = [
   { value: 'merge', label: t('restore.merge'), description: t('restore.mergeDescription') },
@@ -27,6 +27,7 @@ const MODES: { value: RestoreMode; label: string; description: string }[] = [
 ];
 
 export default function RestoreScreen() {
+  const backToParent = useBackToParent();
   const [mode, setMode] = useState<RestoreMode>('merge');
   const [busy, setBusy] = useState(false);
 
@@ -52,7 +53,10 @@ export default function RestoreScreen() {
 
   return (
     <Screen>
-      <AppBar title={t('restore.title')} onBack={() => router.back()} />
+      <AppBar
+        title={t('restore.title')}
+        onBack={() => backToParent({ pathname: '/settings/backup' })}
+      />
       <View style={styles.content}>
         <Section title={t('restore.mode')}>
           <View style={styles.chips}>

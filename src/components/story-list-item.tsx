@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ReactNode } from 'react';
+import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { t } from '@/i18n';
@@ -13,27 +14,48 @@ export { formatCount };
 
 export type StoryListItemProps = {
   story: Story;
-  onPress?: () => void;
+  onPress?: (story: Story) => void;
   unread?: boolean;
   right?: ReactNode;
 };
 
-export function StoryListItem({ story, onPress, unread, right }: StoryListItemProps) {
+export const StoryListItem = memo(function StoryListItem({
+  story,
+  onPress,
+  unread,
+  right,
+}: StoryListItemProps) {
   const theme = useTheme();
 
   const meta = [story.authorName, story.categoryName].filter(Boolean).join('  \u00b7  ');
+  const wordsCount = formatCount(story.wordCount);
+  const viewsCount = formatCount(story.views);
   const stats = [
-    story.wordCount ? `${formatCount(story.wordCount)} words` : null,
-    story.rating ? `\u2605 ${story.rating.toFixed(2)}` : null,
-    story.views ? `${formatCount(story.views)} views` : null,
+    wordsCount ? t('story.listWords', { count: wordsCount }) : null,
+    story.rating ? t('story.listRating', { rating: story.rating.toFixed(2) }) : null,
+    viewsCount ? t('story.listViews', { count: viewsCount }) : null,
   ]
     .filter(Boolean)
     .join('   ');
 
+  const accessibilityLabel = [
+    story.title,
+    meta,
+    stats,
+    unread ? t('library.unread') : null,
+    story.flags.isNew ? t('story.badgeNew') : null,
+    story.flags.isHot ? t('story.badgeHot') : null,
+  ]
+    .filter(Boolean)
+    .join('. ');
+
   return (
     <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
+      onPress={onPress ? () => onPress(story) : undefined}
+      accessible
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={onPress ? t('story.rowHint') : undefined}
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.backgroundElement }]}
     >
       <View style={styles.body}>
@@ -64,10 +86,17 @@ export function StoryListItem({ story, onPress, unread, right }: StoryListItemPr
         ) : null}
       </View>
 
-      {right ?? <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />}
+      {right ?? (
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color={theme.textMuted}
+          importantForAccessibility="no"
+        />
+      )}
     </Pressable>
   );
-}
+});
 
 function Badge({ label, color }: { label: string; color: string }) {
   return (
@@ -90,7 +119,7 @@ const styles = StyleSheet.create({
   body: { flex: 1, gap: Spacing.half },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   title: { fontWeight: '600' },
-  dot: { width: 8, height: 8, borderRadius: 4 },
+  dot: { width: 8, height: 8, borderRadius: 0 },
   badges: { flexDirection: 'row', gap: Spacing.one },
   badge: {
     borderWidth: StyleSheet.hairlineWidth,

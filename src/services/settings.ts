@@ -10,6 +10,21 @@ export type ReaderPagination = 'horizontal' | 'vertical';
  */
 export type BackupLevel = 'meta' | 'stories' | 'history' | 'downloads';
 
+export type NarrationEngineId = 'system' | 'piper' | 'kokoro';
+
+export type NarrationSettings = {
+  engine: NarrationEngineId;
+  voiceId: string | null;
+  /** Playback rate multiplier. */
+  speed: number;
+  /** Seconds to skip forward/back. */
+  skipSeconds: number;
+  /** Seconds to rewind on resume. */
+  autoRewindSeconds: number;
+  /** Default sleep timer length in minutes. */
+  sleepMinutes: number;
+};
+
 export type ReaderSettings = {
   fontFamily: ReaderFontFamily;
   fontSize: number;
@@ -18,7 +33,11 @@ export type ReaderSettings = {
   textAlign: 'left' | 'justify';
   theme: ReaderThemeName;
   pagination: ReaderPagination;
+  /** E-ink support: no page-turn motion when enabled. */
+  reducePageAnimation: boolean;
 };
+
+export type LibraryView = 'grid' | 'list';
 
 export type BackupSettings = {
   /** SAF directory URI chosen by the user, or null when unset. */
@@ -40,12 +59,17 @@ export type AppSettings = {
   checkForLibraryUpdates: boolean;
   checkForAppUpdates: boolean;
   defaultLanguage: string;
+  /** Provider shown in Browse; matches a registered source id. */
+  activeSourceId: string;
   forceNormalList: boolean;
   alternatePagination: boolean;
   onlyShowStoriesInFeed: boolean;
   navigateWithVolumeRocker: boolean;
   enableImmersiveReading: boolean;
+  /** Grid vs list presentation of the Library shelf. */
+  defaultLibraryView: LibraryView;
   reader: ReaderSettings;
+  narration: NarrationSettings;
   backup: BackupSettings;
 };
 
@@ -57,6 +81,16 @@ export const defaultReaderSettings: ReaderSettings = {
   textAlign: 'left',
   theme: 'light',
   pagination: 'horizontal',
+  reducePageAnimation: false,
+};
+
+export const defaultNarrationSettings: NarrationSettings = {
+  engine: 'system',
+  voiceId: null,
+  speed: 1,
+  skipSeconds: 15,
+  autoRewindSeconds: 5,
+  sleepMinutes: 30,
 };
 
 export const defaultBackupSettings: BackupSettings = {
@@ -76,12 +110,15 @@ export const defaultSettings: AppSettings = {
   checkForLibraryUpdates: true,
   checkForAppUpdates: true,
   defaultLanguage: 'en',
+  activeSourceId: 'literotica',
   forceNormalList: false,
   alternatePagination: false,
   onlyShowStoriesInFeed: false,
   navigateWithVolumeRocker: false,
   enableImmersiveReading: true,
+  defaultLibraryView: 'list',
   reader: defaultReaderSettings,
+  narration: defaultNarrationSettings,
   backup: defaultBackupSettings,
 };
 
@@ -91,13 +128,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Merges persisted key/value settings over the defaults, one level deep for the
- * nested `reader` and `backup` groups. Unknown keys are ignored and missing keys
+ * nested `reader`, `narration` and `backup` groups. Unknown keys are ignored and missing keys
  * fall back to defaults, so new settings are always defined after an upgrade.
  */
 export function mergeSettings(stored: Record<string, unknown> | null | undefined): AppSettings {
   const result: AppSettings = {
     ...defaultSettings,
     reader: { ...defaultReaderSettings },
+    narration: { ...defaultNarrationSettings },
     backup: { ...defaultBackupSettings },
   };
 
@@ -116,6 +154,8 @@ export function mergeSettings(stored: Record<string, unknown> | null | undefined
       result.reader = { ...result.reader, ...(value as Partial<ReaderSettings>) };
     } else if (key === 'backup' && isRecord(value)) {
       result.backup = { ...result.backup, ...(value as Partial<BackupSettings>) };
+    } else if (key === 'narration' && isRecord(value)) {
+      result.narration = { ...result.narration, ...(value as Partial<NarrationSettings>) };
     } else {
       assign(key, value as AppSettings[typeof key]);
     }

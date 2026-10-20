@@ -55,7 +55,7 @@ const styles = StyleSheet.create({
   heading: { gap: Spacing.three, alignItems: 'flex-start' },
   badge: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
+    borderRadius: 0,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
   },

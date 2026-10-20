@@ -15,6 +15,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { backupNow, exportBackupFile, exportLibraryCsv, pickBackupFolder } from '@/services/backup';
 import type { BackupLevel, BackupSettings } from '@/services/settings';
 import { useSettingsStore } from '@/stores/settings';
+import { useBackToParent } from '@/navigation/use-parent-back';
 
 const LEVELS: { value: BackupLevel; label: string }[] = [
   { value: 'meta', label: t('settings.backupLevel.meta') },
@@ -24,6 +25,7 @@ const LEVELS: { value: BackupLevel; label: string }[] = [
 ];
 
 export default function BackupSettingsScreen() {
+  const backToParent = useBackToParent();
   const theme = useTheme();
   const settings = useSettingsStore((state) => state.settings);
   const setSetting = useSettingsStore((state) => state.setSetting);
@@ -71,7 +73,7 @@ export default function BackupSettingsScreen() {
 
   return (
     <Screen>
-      <AppBar title={t('settings.backup')} onBack={() => router.back()} />
+      <AppBar title={t('settings.backup')} onBack={() => backToParent({ pathname: '/settings' })} />
       <ScrollView contentContainerStyle={styles.content}>
         <Section title={t('settings.backupLevels')}>
           <View style={styles.hint}>

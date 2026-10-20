@@ -50,6 +50,9 @@ jobs:
       - name: Build release APK
         run: cd android && ./gradlew assembleRelease --no-daemon
 
+      - name: Verify native libraries
+        run: scripts/android/verify-apk.sh android/app/build/outputs/apk/release/app-release-unsigned.apk
+
       - name: Align and sign APK
         env:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/keystore.jks

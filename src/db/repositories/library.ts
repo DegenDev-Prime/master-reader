@@ -1,11 +1,15 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 
-import type { LibraryEntry, Story } from '@/models/story';
+import type { LibraryEntry, ReadingProgress, Story } from '@/models/story';
+import type { Novel } from '@/models/novel';
+import type { ChapterCounts } from './chapters';
 import { nowSeconds } from '@/utils/time';
 
 import { db } from '../client';
 import { toStory } from '../mappers/story';
-import { libraryEntries, stories } from '../schema';
+import { chapterReads, chapters, libraryEntries, readingProgress, stories } from '../schema';
+import { toNovel } from './novels';
+import { toReadingProgress } from './progress';
 
 type LibraryEntryRow = typeof libraryEntries.$inferSelect;
 
@@ -13,6 +17,17 @@ export type LibraryStory = {
   entry: LibraryEntry;
   story: Story | null;
 };
+
+export type LibraryNovel = {
+  entry: LibraryEntry;
+  novel: Novel | null;
+  progress: ReadingProgress | null;
+  counts: ChapterCounts;
+};
+
+function libraryKey(sourceId: string, storyId: string): string {
+  return `${sourceId}\u0000${storyId}`;
+}
 
 function toLibraryEntry(row: LibraryEntryRow): LibraryEntry {
   return {
@@ -87,6 +102,63 @@ export const libraryRepository = {
       entry: toLibraryEntry(row.entry),
       story: row.story ? toStory(row.story) : null,
     }));
+  },
+
+  async listNovels(): Promise<LibraryNovel[]> {
+    const rows = await db
+      .select({ entry: libraryEntries, story: stories })
+      .from(libraryEntries)
+      .leftJoin(
+        stories,
+        and(eq(stories.sourceId, libraryEntries.sourceId), eq(stories.id, libraryEntries.storyId)),
+      )
+      .orderBy(desc(libraryEntries.lastReadAt), desc(libraryEntries.addedAt));
+
+    const progressRows = await db.select().from(readingProgress);
+    const progressByNovel = new Map<string, ReadingProgress>();
+    for (const row of progressRows) {
+      progressByNovel.set(libraryKey(row.sourceId, row.storyId), toReadingProgress(row));
+    }
+
+    const countRows = await db
+      .select({
+        sourceId: chapters.sourceId,
+        novelId: chapters.novelId,
+        total: sql<number>`count(*)`,
+        downloaded: sql<number>`coalesce(sum(case when ${chapters.content} is not null then 1 else 0 end), 0)`,
+        orphaned: sql<number>`coalesce(sum(case when ${chapters.orphaned} = 1 then 1 else 0 end), 0)`,
+        read: sql<number>`coalesce(sum(case when ${chapterReads.chapterId} is not null then 1 else 0 end), 0)`,
+      })
+      .from(chapters)
+      .leftJoin(
+        chapterReads,
+        and(
+          eq(chapterReads.sourceId, chapters.sourceId),
+          eq(chapterReads.novelId, chapters.novelId),
+          eq(chapterReads.chapterId, chapters.id),
+        ),
+      )
+      .groupBy(chapters.sourceId, chapters.novelId);
+
+    const countsByNovel = new Map<string, ChapterCounts>();
+    for (const row of countRows) {
+      countsByNovel.set(libraryKey(row.sourceId, row.novelId), {
+        total: Number(row.total),
+        downloaded: Number(row.downloaded),
+        orphaned: Number(row.orphaned),
+        read: Number(row.read),
+      });
+    }
+
+    return rows.map((row) => {
+      const key = libraryKey(row.entry.sourceId, row.entry.storyId);
+      return {
+        entry: toLibraryEntry(row.entry),
+        novel: row.story ? toNovel(row.story) : null,
+        progress: progressByNovel.get(key) ?? null,
+        counts: countsByNovel.get(key) ?? { total: 0, downloaded: 0, orphaned: 0, read: 0 },
+      };
+    });
   },
 
   async setUnread(sourceId: string, storyId: string, isUnread: boolean): Promise<void> {

@@ -8,7 +8,7 @@ export function LoadingView({ label }: { label?: string }) {
   const theme = useTheme();
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} accessibilityLiveRegion="polite">
       <ActivityIndicator color={theme.primary} />
       {label ? (
         <ThemedText type="small" themeColor="textSecondary">

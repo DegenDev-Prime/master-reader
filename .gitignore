@@ -42,5 +42,11 @@ example
 /ios
 /android
 
+# Gradle output from local Expo modules
+modules/*/android/build/
+modules/*/android/.cxx/
+
 # release / fdroid build output
 /build/
+*.apk
+*.aab

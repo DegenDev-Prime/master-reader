@@ -63,7 +63,10 @@ jobs:
           echo "KEYSTORE=$RUNNER_TEMP/keystore.p12" >> "$GITHUB_ENV"
 
       - name: Build release APK
-        run: cd android && ./gradlew assembleRelease --no-daemon
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon \
+            -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
       # A build that only compiled some of the ABIs installs fine and crashes
       # on launch, so the APKs are rejected here rather than after release.

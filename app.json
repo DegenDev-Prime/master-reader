@@ -45,6 +45,7 @@
         }
       ],
       "./plugins/with-abi-splits",
+      "./plugins/with-gradle-heap",
       "expo-asset"
     ],
     "experiments": {

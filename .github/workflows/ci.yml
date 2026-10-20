@@ -59,7 +59,10 @@ jobs:
         run: npx expo prebuild --platform android --no-install
 
       - name: Build release APK
-        run: cd android && ./gradlew assembleRelease --no-daemon
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon \
+            -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
       # A partial ABI build installs but crashes on launch. The APK is
       # rejected here instead of shipping a broken download.

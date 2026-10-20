@@ -51,7 +51,8 @@ echo "==> Building ${VARIANT} APK for: ${ALL_ABIS[*]}"
   cd android
   ./gradlew "assemble${VARIANT^}" \
     --no-daemon \
-    "-PreactNativeArchitectures=$(IFS=,; echo "${ALL_ABIS[*]}")"
+    "-PreactNativeArchitectures=$(IFS=,; echo "${ALL_ABIS[*]}")" \
+    -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 )
 
 OUT_DIR="android/app/build/outputs/apk/${VARIANT}"

@@ -127,6 +127,8 @@ let sleepTimeout: ReturnType<typeof setTimeout> | null = null;
  * checks it so a session that was stopped or replaced stops loading too.
  */
 let narrationSession = 0;
+/** Where the voice was when it stopped, so the clock does not keep running. */
+let pausedPosition = 0;
 
 /**
  * Builds narration pages from chapter-based sources. Starts at the reader's
@@ -264,6 +266,13 @@ async function releaseNarrator(): Promise<void> {
   activeEngine = null;
 }
 
+/** How far into the current chunk the voice is, in seconds. */
+function livePosition(): number {
+  const { chunkStartedAt } = useNarrationStore.getState();
+  if (chunkStartedAt <= 0) return 0;
+  return Math.max(0, (Date.now() - chunkStartedAt) / 1000);
+}
+
 /** The engine and voice the narrator is currently bound to. */
 function narratorKey(): string {
   const narration = useSettingsStore.getState().settings.narration;
@@ -331,7 +340,12 @@ function ensureNarrator(): Narrator {
         },
       },
       {
-        onStatus: (status) => useNarrationStore.setState({ status }),
+        onStatus: (status) => {
+          if (status !== 'playing') {
+            pausedPosition = livePosition();
+          }
+          useNarrationStore.setState({ status });
+        },
         onChunk: (index) =>
           useNarrationStore.setState({
             chunkIndex: index,
@@ -693,8 +707,8 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
 
   positionInChunk() {
     const { chunkStartedAt, status } = get();
-    if (chunkStartedAt <= 0 || status !== 'playing') return 0;
-    return Math.max(0, (Date.now() - chunkStartedAt) / 1000);
+    if (chunkStartedAt <= 0) return 0;
+    return status === 'playing' ? livePosition() : pausedPosition;
   },
 
   async skip(seconds) {

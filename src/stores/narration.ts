@@ -77,6 +77,7 @@ type NarrationState = {
   skip: (seconds: number) => Promise<void>;
   setSpeed: (speed: number) => Promise<void>;
   setVoice: (voiceId: string | null, engine?: NarrationEngineId) => Promise<void>;
+  warmUp: () => Promise<void>;
   setSleepMinutes: (minutes: number | null) => void;
   setSleepEndOfChapter: () => void;
   clearSleep: () => void;
@@ -685,6 +686,19 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     const { chunkIndex, speed } = get();
     if (chunks.length === 0) return;
     await get().seekChunk(chunkIndexAfterSeconds(chunks, chunkIndex, seconds, speed));
+  },
+
+  /**
+   * Loads the engine before the session starts, so the model is ready when
+   * the reader presses play. Failures are ignored: the session reports them
+   * when it actually starts.
+   */
+  async warmUp() {
+    try {
+      await ensureNarrator().warmUp();
+    } catch {
+      // The session surfaces the failure when it starts.
+    }
   },
 
   async setSpeed(speed) {

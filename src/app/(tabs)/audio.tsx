@@ -202,6 +202,14 @@ export default function AudioScreen() {
     };
   }, [engine, voiceSheet]);
 
+  // Load the engine while the player is on screen, so the model is ready when
+  // the reader presses play.
+  const warmUp = useNarrationStore((state) => state.warmUp);
+  useEffect(() => {
+    if (engine === 'system') return;
+    void warmUp();
+  }, [engine, warmUp]);
+
   const { canPrevChapter, canNextChapter } = deriveChapterNav(
     seriesPosition,
     seriesLength,

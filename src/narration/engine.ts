@@ -43,6 +43,11 @@ export type NarratorEngine = {
    * instead.
    */
   setRate?(rate: number): Promise<boolean>;
+  /**
+   * Loads whatever the engine needs before the first word is spoken, so the
+   * model is not loaded on the critical path of pressing play.
+   */
+  warmup?(): Promise<void>;
   /** Frees native resources (model memory). Optional; no-op by default. */
   release?(): Promise<void>;
 };

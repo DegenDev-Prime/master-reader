@@ -149,6 +149,14 @@ export function createNeuralEngine(
 
     prefetch,
 
+    async warmup(): Promise<void> {
+      const packId = deps.getVoicePackId();
+      if (!packId) return;
+      // Loading the model is the slow part of the first utterance; doing it
+      // before the session starts keeps it off the critical path.
+      await ensureVoice(packId);
+    },
+
     async setRate(rate: number): Promise<boolean> {
       // The audio is synthesized at 1x and the player applies the rate, so a
       // speed change is a live parameter update: no re-synthesis, no restart.

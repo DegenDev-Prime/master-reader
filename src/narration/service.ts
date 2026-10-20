@@ -79,6 +79,20 @@ export class Narrator {
   }
 
   /**
+   * Loads whatever the engine needs before the first word is spoken, so the
+   * model is not loaded on the critical path of pressing play.
+   */
+  async warmUp(): Promise<void> {
+    const warmup = this.deps.engine.warmup;
+    if (!warmup) return;
+    try {
+      await warmup.call(this.deps.engine);
+    } catch {
+      // The session reports the failure when it actually starts.
+    }
+  }
+
+  /**
    * Applies a new rate to the running utterance. Returns false when the engine
    * cannot change it live, so the caller restarts the chunk instead.
    */

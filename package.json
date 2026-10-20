@@ -84,7 +84,7 @@
     "verify:apk": "bash scripts/android/verify-apk.sh",
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
-    "verify": "npm run typecheck && npm run lint && npm run test"
+    "verify": "npm run format:check && npm run typecheck && npm run lint && npm run test"
   },
   "private": true
 }

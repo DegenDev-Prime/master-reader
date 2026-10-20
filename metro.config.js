@@ -13,10 +13,7 @@ config.resolver.sourceExts.push('sql');
 //
 // The browser build is plain JavaScript over `parse5` and `htmlparser2` and
 // pulls in no Node built-ins, so it runs under Hermes unchanged.
-const CHEERIO_BROWSER_BUILD = path.resolve(
-  __dirname,
-  'node_modules/cheerio/dist/browser/index.js',
-);
+const CHEERIO_BROWSER_BUILD = path.resolve(__dirname, 'node_modules/cheerio/dist/browser/index.js');
 
 const resolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {

@@ -246,6 +246,19 @@ describe('chunkIndexAfterSeconds', () => {
     expect(chunkIndexAfterSeconds(chunks, 2, -10_000, 1)).toBe(0);
   });
 
+  it('rewinds to the start of the current chunk when the skip is shorter', () => {
+    // Each chunk is about four seconds long at 1x.
+    const chunks = makeChunks(5);
+    expect(chunkIndexAfterSeconds(chunks, 3, -1, 1)).toBe(3);
+  });
+
+  it('rewinds into the previous chunk when the skip is longer', () => {
+    const chunks = makeChunks(5);
+    const back = chunkIndexAfterSeconds(chunks, 3, -30, 1);
+    expect(back).toBeLessThan(3);
+    expect(back).toBeGreaterThanOrEqual(0);
+  });
+
   it('is a no-op for zero seconds', () => {
     const chunks = makeChunks(4);
     expect(chunkIndexAfterSeconds(chunks, 1, 0, 1)).toBe(1);

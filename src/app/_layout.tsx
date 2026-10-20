@@ -71,7 +71,6 @@ function RootNavigator() {
         />
         <Stack.Screen name="reader/[sourceId]/[id]" options={{ animation: 'fade' }} />
         <Stack.Screen name="downloads/index" />
-        <Stack.Screen name="downloads/[sourceId]/[novelId]" />
         <Stack.Screen name="history" />
         <Stack.Screen name="sources" />
         <Stack.Screen name="settings/index" />

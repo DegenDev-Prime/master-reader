@@ -593,6 +593,12 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       await get().seekChunk(0);
       return;
     }
+    // A failed session keeps its place: the voice picks up where it stopped
+    // rather than starting the story over.
+    if (status === 'error' && get().sourceId && chunks.length > 0) {
+      await get().seekChunk(get().chunkIndex);
+      return;
+    }
     await get().play(sourceId, storyId, title);
   },
 

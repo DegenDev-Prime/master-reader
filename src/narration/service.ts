@@ -239,10 +239,12 @@ export function chunkIndexAfterSeconds(
   }
   let remaining = -seconds;
   let index = clampIndex(fromIndex, chunks.length);
-  while (index > 0) {
-    remaining -= estimateChunkSeconds(chunks[index].text, rate);
-    if (remaining <= 0) break;
+  // The current chunk is spoken from its start, so its own length comes off
+  // first. A skip shorter than the chunk rewinds to the start of it.
+  remaining -= estimateChunkSeconds(chunks[index].text, rate);
+  while (remaining > 0 && index > 0) {
     index -= 1;
+    remaining -= estimateChunkSeconds(chunks[index].text, rate);
   }
   return index;
 }

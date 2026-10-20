@@ -15,6 +15,13 @@ type DetailsFixture = {
 
 type PagesFixture = { index: number; content: string }[];
 
+type ChapterFixture = {
+  id: string;
+  position: number;
+  number: number;
+  title: string;
+};
+
 const mocks = vi.hoisted(() => ({
   systemEngine: {
     id: 'system',
@@ -22,7 +29,9 @@ const mocks = vi.hoisted(() => ({
     speak: vi.fn(() => new Promise<void>(() => {})),
     stop: vi.fn(() => Promise.resolve()),
     isSpeaking: vi.fn(() => Promise.resolve(false)),
+    setRate: vi.fn(() => Promise.resolve(false)),
   },
+  chapterText: vi.fn(() => ({ text: 'A sentence of the chapter.', blockIndexes: [], spans: [] })),
   getStoryDetails: vi.fn((_sourceId: string, storyId: string): Promise<DetailsFixture> =>
     Promise.resolve({ title: `Title ${storyId}`, series: null }),
   ),
@@ -39,8 +48,11 @@ const mocks = vi.hoisted(() => ({
   bookmarksRemove: vi.fn(() => Promise.resolve()),
   settingsGet: vi.fn(() => Promise.resolve(undefined)),
   settingsSet: vi.fn(() => Promise.resolve()),
-  chapterList: vi.fn(() => Promise.resolve([])),
-  chapterContent: vi.fn(() => Promise.resolve(null)),
+  chapterList: vi.fn((): Promise<ChapterFixture[]> => Promise.resolve([])),
+  chapterContent: vi.fn(
+    (_sourceId: string, _novelId: string, _chapterId: string): Promise<string | null> =>
+      Promise.resolve(null),
+  ),
   chapterHtml: vi.fn(() => Promise.resolve(null)),
   progressGet: vi.fn(() => Promise.resolve(null)),
   progressSave: vi.fn(() => Promise.resolve()),
@@ -93,7 +105,7 @@ vi.mock('@/db/repositories/chapters', () => ({
 vi.mock('@/services/novel-catalog', () => ({ getChapterHtml: mocks.chapterHtml }));
 vi.mock('@/sources/content/parse', () => ({ parseChapterBlocks: vi.fn(() => []) }));
 vi.mock('@/sources/content/chapter-text', () => ({
-  chapterText: vi.fn(() => ({ text: '', blockIndexes: [], spans: [] })),
+  chapterText: mocks.chapterText,
 }));
 
 type NarrationModule = typeof import('./narration');
@@ -149,6 +161,14 @@ beforeEach(async () => {
   mocks.setSetting.mockReset().mockResolvedValue(undefined);
   mocks.systemEngine.speak.mockClear();
   mocks.systemEngine.stop.mockClear();
+  mocks.systemEngine.setRate.mockReset().mockResolvedValue(false);
+  mocks.chapterText.mockReset().mockReturnValue({
+    text: 'A sentence of the chapter.',
+    blockIndexes: [],
+    spans: [],
+  });
+  mocks.chapterList.mockReset().mockResolvedValue([]);
+  mocks.chapterContent.mockReset().mockResolvedValue(null);
   mocks.narrationGet.mockClear();
   mocks.narrationSave.mockClear();
   mocks.bookmarksList.mockClear();
@@ -318,6 +338,81 @@ describe('setSpeed', () => {
     await vi.waitFor(() => expect(mocks.systemEngine.speak.mock.calls.length).toBe(speaks + 1));
 
     expect(store.getState().status).toBe('playing');
+  });
+});
+
+describe('live rate changes', () => {
+  it('changes the rate of the running playback when the engine supports it', async () => {
+    await startNarration();
+    mocks.systemEngine.setRate.mockResolvedValue(true);
+    const speaks = mocks.systemEngine.speak.mock.calls.length;
+
+    await store.getState().setSpeed(1.5);
+
+    expect(mocks.systemEngine.setRate).toHaveBeenCalledWith(1.5);
+    // The chunk that is playing is not restarted.
+    expect(mocks.systemEngine.speak.mock.calls.length).toBe(speaks);
+  });
+
+  it('restarts the chunk when the engine cannot change the rate', async () => {
+    await startNarration();
+    mocks.systemEngine.setRate.mockResolvedValue(false);
+    const speaks = mocks.systemEngine.speak.mock.calls.length;
+
+    await store.getState().setSpeed(1.5);
+
+    expect(mocks.systemEngine.speak.mock.calls.length).toBe(speaks + 1);
+  });
+});
+
+describe('setVoice', () => {
+  it('persists the voice and restarts the running session with it', async () => {
+    await startNarration();
+    const speaks = mocks.systemEngine.speak.mock.calls.length;
+
+    await store.getState().setVoice('voice-2');
+
+    expect(mocks.setSetting).toHaveBeenCalledWith(
+      'narration',
+      expect.objectContaining({ voiceId: 'voice-2' }),
+    );
+    // The new voice is heard straight away.
+    expect(mocks.systemEngine.speak.mock.calls.length).toBe(speaks + 1);
+  });
+
+  it('keeps the current engine when only the voice changes', async () => {
+    await startNarration();
+    await store.getState().setVoice(null);
+    expect(mocks.setSetting).toHaveBeenCalledWith(
+      'narration',
+      expect.objectContaining({ voiceId: null }),
+    );
+  });
+
+  it('does nothing to a session that is not running', async () => {
+    await store.getState().setVoice('voice-2');
+    expect(mocks.systemEngine.speak).not.toHaveBeenCalled();
+  });
+});
+
+describe('fast start', () => {
+  it('speaks the first chapter before the rest of the window has loaded', async () => {
+    mocks.chapterList.mockResolvedValue([
+      { id: 'c1', position: 0, number: 1, title: 'One' },
+      { id: 'c2', position: 1, number: 2, title: 'Two' },
+    ]);
+    mocks.chapterContent.mockImplementation(async (_source: string, _novel: string, id: string) => {
+      if (id === 'c1') return '<p>First chapter.</p>';
+      // The second chapter is still on the network.
+      await new Promise(() => {});
+      return null;
+    });
+
+    void store.getState().play('src', 'one', 'Title one');
+
+    // The session is playing even though the second chapter never arrived.
+    await vi.waitFor(() => expect(store.getState().status).toBe('playing'));
+    expect(store.getState().chunkCount).toBe(1);
   });
 });
 

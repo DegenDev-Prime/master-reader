@@ -11,9 +11,15 @@ const MAX_RATE = 3;
  * Device TTS fallback (Android system engine). Zero megabytes, always
  * available offline once a system voice is installed. Robotic compared to
  * neural engines, but it makes narration work everywhere on day one.
+ *
+ * The platform engine synthesizes an utterance before it plays, so a chunk
+ * that is only requested once the previous one finished leaves a silence
+ * between chunks. The engine queues utterances, so the next one is requested
+ * while the current one still plays.
  */
 export const systemEngine: NarratorEngine = {
   id: 'system',
+  queues: true,
 
   async listVoices(): Promise<VoiceInfo[]> {
     const voices = await Speech.getAvailableVoicesAsync();

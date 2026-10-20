@@ -16,17 +16,29 @@ export type PlayerTransportProps = {
   onPressPlay: () => void;
   onPreviousChapter?: () => void;
   onNextChapter?: () => void;
+  /** Rewind and forward by the configured skip interval. */
+  onRewind?: () => void;
+  onForward?: () => void;
+  /** The skip interval, e.g. "15s". */
+  skipLabel?: string;
   /** Speed chip, e.g. "1.0×". */
   speedLabel: string;
   onPressSpeed?: () => void;
   /** Sleep chip, e.g. "30 min" or "Off". */
   sleepLabel: string;
   onPressSleep?: () => void;
+  /** Voice chip, e.g. "System voice". */
+  voiceLabel?: string;
+  onPressVoice?: () => void;
+  onPressBookmark?: () => void;
+  bookmarked?: boolean;
 };
 
 /**
- * The transport row of the player: chapter jumps around a large play button,
- * with the speed and sleep-timer chips on the same line.
+ * The transport of the player: a skip and a play button around a large play
+ * button, chapter jumps beside them, and the speed, sleep, voice and bookmark
+ * controls on a second line. Every control acts on the running session
+ * directly; nothing here navigates away from the player.
  */
 export const PlayerTransport = memo(function PlayerTransport({
   playing,
@@ -37,45 +49,68 @@ export const PlayerTransport = memo(function PlayerTransport({
   onPressPlay,
   onPreviousChapter,
   onNextChapter,
+  onRewind,
+  onForward,
+  skipLabel,
   speedLabel,
   onPressSpeed,
   sleepLabel,
   onPressSleep,
+  voiceLabel,
+  onPressVoice,
+  onPressBookmark,
+  bookmarked = false,
 }: PlayerTransportProps) {
   const theme = useTheme();
   const seekDisabled = loading || !canSeek;
 
   return (
-    <View style={styles.row}>
-      <TransportButton
-        icon="play-skip-back"
-        label={t('reader.previousChapter')}
-        disabled={seekDisabled || !canPreviousChapter}
-        onPress={onPreviousChapter}
-      />
+    <View style={styles.stack}>
+      <View style={styles.row}>
+        <SkipButton
+          icon="play-back"
+          label={t('player.rewind', { seconds: skipLabel ?? '15' })}
+          disabled={seekDisabled}
+          onPress={onRewind}
+        />
 
-      <Pressable
-        onPress={onPressPlay}
-        disabled={loading}
-        accessibilityRole="button"
-        accessibilityLabel={playing ? t('narration.pause') : t('narration.play')}
-        accessibilityState={{ disabled: loading }}
-        style={({ pressed }) => [
-          styles.play,
-          { backgroundColor: theme.primary, borderColor: theme.primary },
-          pressed && { opacity: 0.85 },
-          loading && { opacity: 0.5 },
-        ]}
-      >
-        <Ionicons name={playing ? 'pause' : 'play'} size={30} color={theme.primaryText} />
-      </Pressable>
+        <TransportButton
+          icon="play-skip-back"
+          label={t('reader.previousChapter')}
+          disabled={seekDisabled || !canPreviousChapter}
+          onPress={onPreviousChapter}
+        />
 
-      <TransportButton
-        icon="play-skip-forward"
-        label={t('reader.nextChapter')}
-        disabled={seekDisabled || !canNextChapter}
-        onPress={onNextChapter}
-      />
+        <Pressable
+          onPress={onPressPlay}
+          disabled={loading}
+          accessibilityRole="button"
+          accessibilityLabel={playing ? t('narration.pause') : t('narration.play')}
+          accessibilityState={{ disabled: loading }}
+          style={({ pressed }) => [
+            styles.play,
+            { backgroundColor: theme.primary, borderColor: theme.primary },
+            pressed && { opacity: 0.85 },
+            loading && { opacity: 0.5 },
+          ]}
+        >
+          <Ionicons name={playing ? 'pause' : 'play'} size={30} color={theme.primaryText} />
+        </Pressable>
+
+        <TransportButton
+          icon="play-skip-forward"
+          label={t('reader.nextChapter')}
+          disabled={seekDisabled || !canNextChapter}
+          onPress={onNextChapter}
+        />
+
+        <SkipButton
+          icon="play-forward"
+          label={t('player.forward', { seconds: skipLabel ?? '15' })}
+          disabled={seekDisabled}
+          onPress={onForward}
+        />
+      </View>
 
       <View style={styles.chips}>
         <ChipButton
@@ -90,6 +125,35 @@ export const PlayerTransport = memo(function PlayerTransport({
           onPress={onPressSleep}
           disabled={loading}
         />
+        {voiceLabel ? (
+          <ChipButton
+            icon="mic-outline"
+            label={voiceLabel}
+            onPress={onPressVoice}
+            disabled={loading}
+          />
+        ) : null}
+        {onPressBookmark ? (
+          <Pressable
+            onPress={onPressBookmark}
+            disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel={bookmarked ? t('narration.bookmarked') : t('narration.bookmark')}
+            accessibilityState={{ disabled: loading, selected: bookmarked }}
+            style={({ pressed }) => [
+              styles.chip,
+              { borderColor: theme.border, backgroundColor: theme.backgroundSelected },
+              pressed && !loading && { opacity: 0.85 },
+              loading && { opacity: 0.45 },
+            ]}
+          >
+            <Ionicons
+              name={bookmarked ? 'bookmark' : 'bookmark-outline'}
+              size={14}
+              color={bookmarked ? theme.primary : theme.textSecondary}
+            />
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -120,7 +184,41 @@ function TransportButton({
         disabled && { opacity: 0.4 },
       ]}
     >
-      <Ionicons name={icon} size={26} color={disabled ? theme.textMuted : theme.text} />
+      <Ionicons name={icon} size={24} color={disabled ? theme.textMuted : theme.text} />
+    </Pressable>
+  );
+}
+
+/** A skip control: the direction arrow with the interval under it. */
+function SkipButton({
+  icon,
+  label,
+  disabled,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  disabled: boolean;
+  onPress?: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      style={({ pressed }) => [
+        styles.skip,
+        pressed && !disabled && { opacity: 0.85 },
+        disabled && { opacity: 0.4 },
+      ]}
+    >
+      <Ionicons name={icon} size={22} color={disabled ? theme.textMuted : theme.textSecondary} />
+      <ThemedText type="small" themeColor="textMuted">
+        {label}
+      </ThemedText>
     </Pressable>
   );
 }
@@ -160,7 +258,8 @@ function ChipButton({
 }
 
 const styles = StyleSheet.create({
-  row: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
+  stack: { gap: Spacing.three },
+  row: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'center' },
   play: {
     alignItems: 'center',
     height: 60,
@@ -174,7 +273,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: MinTouchTarget,
   },
-  chips: { flex: 1, flexDirection: 'row', gap: Spacing.one, justifyContent: 'flex-end' },
+  skip: { alignItems: 'center', gap: 2, justifyContent: 'center', minWidth: 44 },
+  chips: { flexDirection: 'row', gap: Spacing.one, justifyContent: 'center' },
   chip: {
     alignItems: 'center',
     flexDirection: 'row',

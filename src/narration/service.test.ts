@@ -15,9 +15,10 @@ function makeChunks(count: number): SpeechChunk[] {
   }));
 }
 
-function fakeEngine(spoken: string[]): NarratorEngine {
+function fakeEngine(spoken: string[], queues = false): NarratorEngine {
   return {
     id: 'system',
+    queues,
     listVoices: async () => [],
     speak: async ({ chunk }) => {
       spoken.push(chunk.id);
@@ -29,40 +30,61 @@ function fakeEngine(spoken: string[]): NarratorEngine {
 
 const idleSleep = (): SleepTimerState => ({ mode: 'off' });
 
+type Deps = ConstructorParameters<typeof Narrator>[0];
+
+function deps(engine: NarratorEngine, extra: Partial<Deps> = {}): Deps {
+  return {
+    engine,
+    getSleepState: idleSleep,
+    nowMs: () => 0,
+    getRate: () => 1,
+    onProgress: () => {},
+    ...extra,
+  };
+}
+
 describe('Narrator', () => {
   it('plays every chunk in order and reports progress', async () => {
     const spoken: string[] = [];
     const progress: number[] = [];
     const done: string[] = [];
     const narrator = new Narrator(
-      {
-        engine: fakeEngine(spoken),
-        getSleepState: idleSleep,
-        nowMs: () => 0,
-        onProgress: (i) => progress.push(i),
-      },
+      deps(fakeEngine(spoken), { onProgress: (i) => progress.push(i) }),
       { onDone: (reason) => done.push(reason) },
     );
 
-    await narrator.play({ chunks: makeChunks(3), rate: 1 });
+    narrator.play({ chunks: makeChunks(3), rate: 1 });
+    await narrator.finished;
     expect(spoken).toEqual(['0:0', '0:1', '0:2']);
     expect(progress).toEqual([0, 1, 2]);
     expect(done).toEqual(['finished']);
     expect(narrator.currentStatus).toBe('idle');
   });
 
+  it('returns from play before the run ends', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const engine = fakeEngine([]);
+    engine.speak = async () => {
+      await gate;
+    };
+    const narrator = new Narrator(deps(engine), {});
+
+    // The call returns while the run is still going: awaiting it would keep
+    // every caller pending for a whole chapter.
+    narrator.play({ chunks: makeChunks(2), rate: 1 });
+    expect(narrator.currentStatus).not.toBe('idle');
+    release();
+    await narrator.finished;
+  });
+
   it('starts from a saved chunk index', async () => {
     const spoken: string[] = [];
-    const narrator = new Narrator(
-      {
-        engine: fakeEngine(spoken),
-        getSleepState: idleSleep,
-        nowMs: () => 0,
-        onProgress: () => {},
-      },
-      {},
-    );
-    await narrator.play({ chunks: makeChunks(3), rate: 1, startIndex: 2 });
+    const narrator = new Narrator(deps(fakeEngine(spoken)), {});
+    narrator.play({ chunks: makeChunks(3), rate: 1, startIndex: 2 });
+    await narrator.finished;
     expect(spoken).toEqual(['0:2']);
   });
 
@@ -70,15 +92,14 @@ describe('Narrator', () => {
     const spoken: string[] = [];
     const done: string[] = [];
     const narrator = new Narrator(
-      {
-        engine: fakeEngine(spoken),
+      deps(fakeEngine(spoken), {
         getSleepState: () => ({ mode: 'minutes', endsAtMs: 0 }),
         nowMs: () => 999,
-        onProgress: () => {},
-      },
+      }),
       { onDone: (reason) => done.push(reason) },
     );
-    await narrator.play({ chunks: makeChunks(3), rate: 1 });
+    narrator.play({ chunks: makeChunks(3), rate: 1 });
+    await narrator.finished;
     expect(spoken).toEqual([]);
     expect(done).toEqual(['sleep']);
     expect(narrator.currentStatus).toBe('paused');
@@ -90,11 +111,9 @@ describe('Narrator', () => {
       const { NarrationStoppedError } = await import('./engine');
       throw new NarrationStoppedError();
     };
-    const narrator = new Narrator(
-      { engine, getSleepState: idleSleep, nowMs: () => 0, onProgress: () => {} },
-      {},
-    );
-    await narrator.play({ chunks: makeChunks(2), rate: 1 });
+    const narrator = new Narrator(deps(engine), {});
+    narrator.play({ chunks: makeChunks(2), rate: 1 });
+    await narrator.finished;
     expect(narrator.currentStatus).toBe('paused');
   });
 
@@ -104,11 +123,9 @@ describe('Narrator', () => {
       throw new Error('boom');
     };
     const errors: Error[] = [];
-    const narrator = new Narrator(
-      { engine, getSleepState: idleSleep, nowMs: () => 0, onProgress: () => {} },
-      { onError: (error) => errors.push(error) },
-    );
-    await narrator.play({ chunks: makeChunks(1), rate: 1 });
+    const narrator = new Narrator(deps(engine), { onError: (error) => errors.push(error) });
+    narrator.play({ chunks: makeChunks(1), rate: 1 });
+    await narrator.finished;
     expect(narrator.currentStatus).toBe('error');
     expect(errors.map((e) => e.message)).toEqual(['boom']);
   });
@@ -124,15 +141,93 @@ describe('Narrator', () => {
       spoken.push(chunk.id);
       await gate;
     };
-    const narrator = new Narrator(
-      { engine, getSleepState: idleSleep, nowMs: () => 0, onProgress: () => {} },
-      {},
-    );
-    const first = narrator.play({ chunks: makeChunks(2), rate: 1 });
-    const second = narrator.play({ chunks: makeChunks(1), rate: 1 });
+    const narrator = new Narrator(deps(engine), {});
+
+    narrator.play({ chunks: makeChunks(2), rate: 1 });
+    narrator.play({ chunks: makeChunks(1), rate: 1 });
     release();
-    await Promise.all([first, second]);
+    await narrator.finished;
     expect(spoken.filter((id) => id === '0:1')).toEqual([]);
+  });
+
+  it('gives a queueing engine the next chunk before the current one ends', async () => {
+    const spoken: string[] = [];
+    const engine = fakeEngine(spoken, true);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    engine.speak = async ({ chunk }) => {
+      spoken.push(chunk.id);
+      await gate;
+    };
+    const narrator = new Narrator(deps(engine), {});
+
+    narrator.play({ chunks: makeChunks(3), rate: 1 });
+    // The engine was asked for the second chunk while the first is still
+    // playing, so the platform TTS can synthesize it in the background.
+    await Promise.resolve();
+    expect(spoken).toEqual(['0:0', '0:1']);
+    release();
+    await narrator.finished;
+    expect(spoken).toEqual(['0:0', '0:1', '0:2']);
+  });
+
+  it('does not queue ahead for an engine that plays one file at a time', async () => {
+    const spoken: string[] = [];
+    const engine = fakeEngine(spoken);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    engine.speak = async ({ chunk }) => {
+      spoken.push(chunk.id);
+      await gate;
+    };
+    const narrator = new Narrator(deps(engine), {});
+
+    narrator.play({ chunks: makeChunks(3), rate: 1 });
+    await Promise.resolve();
+    expect(spoken).toEqual(['0:0']);
+    release();
+    await narrator.finished;
+  });
+
+  it('applies a live rate change when the engine supports it', async () => {
+    const rates: number[] = [];
+    const engine = fakeEngine([]);
+    engine.setRate = async (rate) => {
+      rates.push(rate);
+      return true;
+    };
+    const narrator = new Narrator(deps(engine), {});
+
+    expect(await narrator.setRate(1.5)).toBe(true);
+    expect(rates).toEqual([1.5]);
+  });
+
+  it('reports that the rate cannot be changed when the engine has no setter', async () => {
+    const narrator = new Narrator(deps(fakeEngine([])), {});
+    expect(await narrator.setRate(1.5)).toBe(false);
+  });
+
+  it('speaks each chunk at the current rate', async () => {
+    const rates: number[] = [];
+    const engine = fakeEngine([]);
+    engine.speak = async ({ rate }) => {
+      rates.push(rate);
+    };
+    let current = 1;
+    const narrator = new Narrator(deps(engine, { getRate: () => current }), {});
+
+    narrator.play({ chunks: makeChunks(2), rate: 1 });
+    await narrator.finished;
+    expect(rates).toEqual([1, 1]);
+
+    current = 1.5;
+    narrator.play({ chunks: makeChunks(1), rate: 1 });
+    await narrator.finished;
+    expect(rates).toEqual([1, 1, 1.5]);
   });
 });
 

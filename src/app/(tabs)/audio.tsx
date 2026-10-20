@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { t } from '@/i18n';
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { IconButton } from '@/components/ui/icon-button';
 import { LoadingView } from '@/components/ui/loading';
+import { OptionSheet } from '@/components/ui/option-sheet';
 import { Screen } from '@/components/ui/screen';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { ThemedText } from '@/components/themed-text';
@@ -19,16 +20,17 @@ import { chapterRepository } from '@/db/repositories/chapters';
 import { narrationRepository } from '@/db/repositories/narration';
 import { novelRepository } from '@/db/repositories/novels';
 import { useTheme } from '@/hooks/use-theme';
-import { formatChapterLength } from '@/narration/player-estimates';
+import { listSelectableVoices, type SelectableVoice } from '@/narration/available-voices';
+import { formatChapterLength, formatDuration, playerTiming } from '@/narration/player-estimates';
 import { sleepTimerRemainingMs, type SleepTimerState as SleepMode } from '@/narration/sleep-timer';
-import { deriveChapterNav } from '@/components/ui/transport-state';
+import { deriveChapterNav, NARRATION_SPEED_VALUES } from '@/components/ui/transport-state';
 import { openReader } from '@/navigation/routes';
 import { useOpenTarget } from '@/navigation/use-parent-back';
 import type { RouteTarget } from '@/navigation/parent';
 import { narrationChunks, useNarrationStore } from '@/stores/narration';
 import { useSettingsStore } from '@/stores/settings';
 
-/** The narration settings screen, opened from the speed, sleep and voice rows. */
+/** The narration settings screen, opened for the options the player lacks. */
 const NARRATION_SETTINGS: RouteTarget = { pathname: '/settings/narration' };
 
 type RecentSession = {
@@ -58,14 +60,25 @@ export default function AudioScreen() {
   const seriesLength = useNarrationStore((state) => state.seriesLength);
   const playPrevInQueue = useNarrationStore((state) => state.playPrevInQueue);
   const playNextInQueue = useNarrationStore((state) => state.playNextInQueue);
+  const skip = useNarrationStore((state) => state.skip);
+  const setSpeed = useNarrationStore((state) => state.setSpeed);
+  const setVoice = useNarrationStore((state) => state.setVoice);
+  const playChapter = useNarrationStore((state) => state.playChapter);
+  const addBookmark = useNarrationStore((state) => state.addBookmark);
+  const bookmarks = useNarrationStore((state) => state.bookmarks);
 
   const [recent, setRecent] = useState<RecentSession[] | null>(null);
   const [upNext, setUpNext] = useState<UpNextItem[]>([]);
   const [chapterLabel, setChapterLabel] = useState<string | null>(null);
   const [cover, setCover] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [speedSheet, setSpeedSheet] = useState(false);
+  const [voiceSheet, setVoiceSheet] = useState(false);
+  const [voices, setVoices] = useState<SelectableVoice[] | null>(null);
 
   const hasSession = sourceId !== null && storyId !== null;
+  const narrationSettings = useSettingsStore((state) => state.settings.narration);
+  const engine = narrationSettings.engine;
 
   const load = useCallback(async () => {
     const sessions = await narrationRepository.listAll();
@@ -173,6 +186,22 @@ export default function AudioScreen() {
     }, [chapterWindow, currentChapterId, sourceId, storyId]),
   );
 
+  // The voices of the current engine, loaded when the picker is opened.
+  useEffect(() => {
+    if (!voiceSheet) return;
+    let cancelled = false;
+    void listSelectableVoices(engine)
+      .then((list) => {
+        if (!cancelled) setVoices(list);
+      })
+      .catch(() => {
+        if (!cancelled) setVoices([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [engine, voiceSheet]);
+
   const { canPrevChapter, canNextChapter } = deriveChapterNav(
     seriesPosition,
     seriesLength,
@@ -193,10 +222,21 @@ export default function AudioScreen() {
 
   const openTarget = useOpenTarget();
 
-  const voiceLabel = useSettingsStore((state) => {
-    const narration = state.settings.narration;
-    return narration.voiceId ?? t('narration.engineSystem');
-  });
+  // The name of the voice in use, so the player shows which one speaks. The
+  // list of voices arrives after the screen does, so the label is derived
+  // from both.
+  const voiceId = useSettingsStore((state) => state.settings.narration.voiceId);
+  const voiceLabel = useMemo(() => {
+    if (!voiceId) return t('narration.engineSystem');
+    return voices?.find((voice) => voice.id === voiceId)?.name ?? voiceId;
+  }, [voiceId, voices]);
+
+  // Playback timing of the loaded session. The chunk list grows as the
+  // background loader adds chapters, so its length is a dependency.
+  const timing = useMemo(
+    () => playerTiming(narrationChunks().slice(0, chunkCount), chunkIndex, speed),
+    [chunkIndex, speed, chunkCount],
+  );
 
   return (
     <Screen>
@@ -260,19 +300,26 @@ export default function AudioScreen() {
               ) : null}
 
               <View style={styles.progressBlock}>
-                <ThemedText type="small" themeColor="textMuted">
-                  {t('player.partOf', {
-                    current: chunkIndex + 1,
-                    total: Math.max(chunkCount, 1),
-                  })}
-                </ThemedText>
+                <View style={styles.progressLabels}>
+                  <ThemedText type="small" themeColor="textMuted">
+                    {t('player.partOf', {
+                      current: chunkIndex + 1,
+                      total: Math.max(chunkCount, 1),
+                    })}
+                  </ThemedText>
+                  {timing.totalMs > 0 ? (
+                    <ThemedText type="small" themeColor="textMuted">
+                      {`${formatDuration(timing.elapsedMs)} / ${formatDuration(timing.totalMs)}`}
+                    </ThemedText>
+                  ) : null}
+                </View>
                 <View style={[styles.track, { backgroundColor: theme.border }]}>
                   <View
                     style={[
                       styles.fill,
                       {
                         backgroundColor: theme.primary,
-                        width: `${chunkCount > 0 ? ((chunkIndex + 1) / chunkCount) * 100 : 0}%`,
+                        width: `${timing.fraction * 100}%`,
                       },
                     ]}
                   />
@@ -288,18 +335,20 @@ export default function AudioScreen() {
                 onPressPlay={onPlayPress}
                 onPreviousChapter={() => void playPrevInQueue()}
                 onNextChapter={() => void playNextInQueue()}
+                onRewind={() => void skip(-narrationSettings.skipSeconds)}
+                onForward={() => void skip(narrationSettings.skipSeconds)}
+                skipLabel={t('narration.skipSeconds', { count: narrationSettings.skipSeconds })}
                 speedLabel={t('narration.speedValue', { value: speed })}
-                onPressSpeed={() => openTarget(NARRATION_SETTINGS)}
+                onPressSpeed={() => setSpeedSheet(true)}
                 sleepLabel={sleepLabel(sleep)}
                 onPressSleep={() => openTarget(NARRATION_SETTINGS)}
+                voiceLabel={voiceLabel}
+                onPressVoice={() => setVoiceSheet(true)}
+                onPressBookmark={() => void addBookmark()}
+                bookmarked={bookmarks.length > 0}
               />
 
-              <UpNextList
-                items={upNext}
-                onSelect={(item) => {
-                  if (sourceId && storyId) void play(sourceId, storyId, title);
-                }}
-              />
+              <UpNextList items={upNext} onSelect={(item) => void playChapter(item.id)} />
             </>
           ) : (
             <RecentList
@@ -315,6 +364,37 @@ export default function AudioScreen() {
           />
         </ScrollView>
       )}
+
+      <OptionSheet
+        visible={speedSheet}
+        title={t('narration.speed')}
+        options={NARRATION_SPEED_VALUES.map((value) => ({
+          value: String(value),
+          label: t('narration.speedValue', { value }),
+        }))}
+        value={String(speed)}
+        onSelect={(value) => {
+          if (value != null) void setSpeed(Number(value));
+          setSpeedSheet(false);
+        }}
+        onClose={() => setSpeedSheet(false)}
+      />
+
+      <OptionSheet
+        visible={voiceSheet}
+        title={t('narration.voice')}
+        options={(voices ?? []).map((voice) => ({
+          value: voice.id,
+          label: voice.name,
+        }))}
+        value={narrationSettings.voiceId}
+        allLabel={t('narration.engineSystem')}
+        onSelect={(value) => {
+          void setVoice(value);
+          setVoiceSheet(false);
+        }}
+        onClose={() => setVoiceSheet(false)}
+      />
     </Screen>
   );
 }
@@ -441,6 +521,7 @@ const styles = StyleSheet.create({
   section: { gap: Spacing.two },
   card: { borderWidth: StyleSheet.hairlineWidth },
   progressBlock: { gap: Spacing.two },
+  progressLabels: { flexDirection: 'row', justifyContent: 'space-between' },
   track: { height: 2, overflow: 'hidden' },
   fill: { height: 2 },
   recentRow: {

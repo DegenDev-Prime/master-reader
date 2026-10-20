@@ -25,12 +25,24 @@ export type SpeakRequest = {
  */
 export type NarratorEngine = {
   readonly id: NarrationEngineId;
+  /**
+   * When true the engine keeps its own queue: asking it to speak the next
+   * chunk while the current one plays does not interrupt it. Engines that
+   * play one file at a time leave this unset.
+   */
+  readonly queues?: boolean;
   listVoices(): Promise<VoiceInfo[]>;
   speak(request: SpeakRequest): Promise<void>;
   stop(): Promise<void>;
   isSpeaking(): Promise<boolean>;
   /** Best-effort background synthesis of upcoming chunks (neural engines). */
   prefetch?(requests: SpeakRequest[]): void;
+  /**
+   * Applies a new rate to the utterance that is already playing. Returns false
+   * when the engine cannot change it live, so the caller restarts the chunk
+   * instead.
+   */
+  setRate?(rate: number): Promise<boolean>;
   /** Frees native resources (model memory). Optional; no-op by default. */
   release?(): Promise<void>;
 };

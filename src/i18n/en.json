@@ -395,7 +395,9 @@
     "minutesAgo": "{{count}} min ago",
     "hoursAgo": "{{count}} h ago",
     "daysAgo": "{{count}} d ago",
-    "chapterNumber": "Chapter {{position}}"
+    "chapterNumber": "Chapter {{position}}",
+    "rewind": "Rewind {{seconds}}",
+    "forward": "Forward {{seconds}}"
   },
   "downloads": {
     "title": "Downloads",

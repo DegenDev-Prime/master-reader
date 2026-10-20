@@ -24,6 +24,7 @@ import {
   type SleepTimerState,
 } from '@/narration/sleep-timer';
 import type { NarrationBookmark, NarrationStatus } from '@/narration/types';
+import type { NarrationEngineId } from '@/services/settings';
 import { voicePackById } from '@/narration/voice-packs';
 import {
   applyPronunciation,
@@ -75,6 +76,7 @@ type NarrationState = {
   seekChunk: (index: number) => Promise<void>;
   skip: (seconds: number) => Promise<void>;
   setSpeed: (speed: number) => Promise<void>;
+  setVoice: (voiceId: string | null, engine?: NarrationEngineId) => Promise<void>;
   setSleepMinutes: (minutes: number | null) => void;
   setSleepEndOfChapter: () => void;
   clearSleep: () => void;
@@ -88,6 +90,7 @@ type NarrationState = {
     chunkIndex: number,
     title?: string | null,
   ) => Promise<void>;
+  playChapter: (chapterId: string) => Promise<void>;
   playNextInQueue: () => Promise<void>;
   playPrevInQueue: () => Promise<void>;
 };
@@ -105,16 +108,34 @@ let narrationChapterTotal = 0;
  * sides always agree on how the text was transformed.
  */
 let narrationPageMaps = new Map<number, { text: string; mapped: MappedNarration }>();
+/**
+ * The narration text of every chapter of the window that has been loaded, in
+ * reading order. The chunk list is rebuilt from it, so a chapter that is
+ * jumped to before the background loader reached it still ends up in the
+ * right place.
+ */
+let narrationPages: { index: number; content: string }[] = [];
 let sleepTimeout: ReturnType<typeof setTimeout> | null = null;
+/**
+ * Identifies the current narration session. The background chapter loader
+ * checks it so a session that was stopped or replaced stops loading too.
+ */
+let narrationSession = 0;
 
 /**
  * Builds narration pages from chapter-based sources. Starts at the reader's
  * saved chapter and loads a bounded window so a 3,000-chapter serial does not
  * block playback.
+ *
+ * Only the first chapter is awaited: the rest of the window is fetched in the
+ * background and appended to `chunks`, which the running narrator holds, so
+ * the first words are spoken while the later chapters are still loading.
  */
 async function loadChapterNarrationPages(
   sourceId: string,
   storyId: string,
+  chunks: SpeechChunk[],
+  session: number,
 ): Promise<Pick<StoryPage, 'index' | 'content'>[] | null> {
   const list = await chapterRepository.listMetadata(sourceId, storyId);
   if (list.length === 0) return null;
@@ -128,50 +149,59 @@ async function loadChapterNarrationPages(
   const window = list.slice(startIndex, startIndex + NARRATION_CHAPTER_WINDOW);
   const rules = rulesForStory(usePronunciationStore.getState().rules, sourceId, storyId);
 
-  const pages: Pick<StoryPage, 'index' | 'content'>[] = [];
-  const pageMaps = new Map<number, { text: string; mapped: MappedNarration }>();
-  for (let offset = 0; offset < window.length; offset += 3) {
-    const batch = window.slice(offset, offset + 3);
-    const loaded = await Promise.all(
-      batch.map(async (chapter) => {
-        try {
-          let html = await chapterRepository.getContent(sourceId, storyId, chapter.id);
-          if (!html) html = await getChapterHtml(sourceId, storyId, chapter.id);
-          if (!html) return null;
-          const text = chapterText(parseChapterBlocks(html)).text;
-          if (!text) return null;
-          // The mapped text is the narration text: pronunciation applied and
-          // whitespace normalized, exactly what the chunker will index into.
-          const mapped = applyPronunciationMapped(text, rules);
-          pageMaps.set(chapter.position, { text, mapped });
-          return {
-            index: chapter.position,
-            content: mapped.text,
-          };
-        } catch {
-          return null;
-        }
-      }),
-    );
-    for (const page of loaded) {
-      if (page) pages.push(page);
-    }
-  }
-
-  if (pages.length === 0) return null;
-  pages.sort((a, b) => a.index - b.index);
   narrationChapterList = window.map((chapter) => ({
     id: chapter.id,
     position: chapter.position,
     title: chapter.title,
   }));
   narrationChapterTotal = list.length;
-  narrationPageMaps = pageMaps;
   useNarrationStore.setState({
     chapterWindow: [...narrationChapterList],
     chapterTotal: narrationChapterTotal,
   });
-  return pages;
+
+  const loadChapter = async (chapter: (typeof window)[number]) => {
+    try {
+      let html = await chapterRepository.getContent(sourceId, storyId, chapter.id);
+      if (!html) html = await getChapterHtml(sourceId, storyId, chapter.id);
+      if (!html) return null;
+      const text = chapterText(parseChapterBlocks(html)).text;
+      if (!text) return null;
+      // The mapped text is the narration text: pronunciation applied and
+      // whitespace normalized, exactly what the chunker will index into.
+      const mapped = applyPronunciationMapped(text, rules);
+      narrationPageMaps.set(chapter.position, { text, mapped });
+      return { index: chapter.position, content: mapped.text };
+    } catch {
+      return null;
+    }
+  };
+
+  const first = await loadChapter(window[0]);
+  if (!first) return null;
+  narrationPages = [first];
+
+  void (async () => {
+    for (let offset = 1; offset < window.length; offset += 3) {
+      if (session !== narrationSession) return;
+      const batch = window.slice(offset, offset + 3);
+      const loaded = await Promise.all(batch.map((chapter) => loadChapter(chapter)));
+      if (session !== narrationSession) return;
+      const pages = loaded.filter(
+        (page): page is { index: number; content: string } => page != null,
+      );
+      if (pages.length === 0) continue;
+      pages.sort((a, b) => a.index - b.index);
+      narrationPages = [...narrationPages, ...pages].sort((a, b) => a.index - b.index);
+      // The narrator holds this array, so growing it extends the run.
+      chunks.push(
+        ...chunkPages(pages.map((page) => ({ index: page.index, content: page.content }))),
+      );
+      useNarrationStore.setState({ chunkCount: chunks.length });
+    }
+  })();
+
+  return [first];
 }
 
 /**
@@ -204,9 +234,38 @@ function resolveEngine(): NarratorEngine {
   });
 }
 
-function ensureNarrator(): Narrator {
+/**
+ * Stops the current narrator and releases its engine. Used when the engine
+ * or the voice changes: the narrator is bound to the engine it was built
+ * with, so the old one has to go before a new one is created.
+ */
+async function releaseNarrator(): Promise<void> {
+  const previous = narrator;
+  narrator = null;
+  narratorEngineKey = '';
+  if (previous) {
+    try {
+      await previous.stop();
+    } catch {
+      // The engine is going away anyway.
+    }
+  }
+  try {
+    await activeEngine?.release?.();
+  } catch {
+    // Best-effort native cleanup.
+  }
+  activeEngine = null;
+}
+
+/** The engine and voice the narrator is currently bound to. */
+function narratorKey(): string {
   const narration = useSettingsStore.getState().settings.narration;
-  const key = `${narration.engine}:${narration.voiceId ?? ''}`;
+  return `${narration.engine}:${narration.voiceId ?? ''}`;
+}
+
+function ensureNarrator(): Narrator {
+  const key = narratorKey();
   if (!narrator || narratorEngineKey !== key) {
     const engine = resolveEngine();
     activeEngine = engine;
@@ -215,6 +274,7 @@ function ensureNarrator(): Narrator {
         engine,
         getSleepState: () => useNarrationStore.getState().sleep,
         nowMs: () => Date.now(),
+        getRate: () => useNarrationStore.getState().speed,
         onProgress: (chunkIndex) => {
           const state = useNarrationStore.getState();
           if (state.sourceId && state.storyId) {
@@ -387,6 +447,8 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       return;
     }
     try {
+      // A narrator bound to another engine or voice keeps running otherwise.
+      if (narrator && narratorEngineKey !== narratorKey()) await releaseNarrator();
       await ensureNarrator().stop();
     } catch (error) {
       set({
@@ -397,10 +459,16 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     }
     // A new session must not leave an armed timer badge with a dead timeout.
     get().clearSleep();
+    narrationSession += 1;
+    const session = narrationSession;
     seriesItems = [];
     narrationChapterList = [];
     narrationChapterTotal = 0;
     narrationPageMaps = new Map();
+    narrationPages = [];
+    // The narrator keeps this array, so the background loader can extend it.
+    const sessionChunks: SpeechChunk[] = [];
+    chunks = sessionChunks;
     set({
       status: 'loading',
       sourceId,
@@ -422,7 +490,12 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       // per-chunk rule pass below reads the hydrated snapshot synchronously.
       await usePronunciationStore.getState().hydrate();
 
-      const chapterPages = await loadChapterNarrationPages(sourceId, storyId);
+      const chapterPages = await loadChapterNarrationPages(
+        sourceId,
+        storyId,
+        sessionChunks,
+        session,
+      );
       let pages: Pick<StoryPage, 'index' | 'content'>[];
       const chapterMode = chapterPages != null;
       if (chapterPages) {
@@ -440,35 +513,36 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
         }));
       }
 
-      chunks = chunkPages(
+      const initial = chunkPages(
         pages.map((page) => ({
           index: page.index,
           content: page.content ?? '',
         })),
       );
-      if (chunks.length === 0) throw new Error('No readable text found.');
-      set({ chunkCount: chunks.length });
+      if (initial.length === 0) throw new Error('No readable text found.');
+      sessionChunks.push(...initial);
+      set({ chunkCount: sessionChunks.length });
 
       const narration = useSettingsStore.getState().settings.narration;
       let startIndex = 0;
       if (chapterMode) {
         const progress = await progressRepository.get(sourceId, storyId);
         const chapter = narrationChapterList.find((item) => item.id === progress?.chapterId);
-        startIndex = chunkIndexForPage(chunks, chapter?.position ?? pages[0]?.index ?? 0);
+        startIndex = chunkIndexForPage(sessionChunks, chapter?.position ?? pages[0]?.index ?? 0);
       } else {
         const saved = await narrationRepository.get(sourceId, storyId);
         const read = await loadProgress(sourceId, storyId).catch(() => null);
         // Resume from whichever memory is further along: audio or text.
-        const audioChunk = Math.min(saved?.chunkIndex ?? 0, chunks.length - 1);
+        const audioChunk = Math.min(saved?.chunkIndex ?? 0, sessionChunks.length - 1);
         const textChunk =
           read && read.pageCount
-            ? chunkIndexForPage(chunks, Math.min(read.pageIndex, read.pageCount - 1))
+            ? chunkIndexForPage(sessionChunks, Math.min(read.pageIndex, read.pageCount - 1))
             : 0;
         startIndex = Math.max(audioChunk, textChunk);
       }
       set({
         chunkIndex: startIndex,
-        chunkText: chunks[startIndex]?.text ?? null,
+        chunkText: sessionChunks[startIndex]?.text ?? null,
         speed: narration.speed,
       });
 
@@ -485,8 +559,12 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       }
       await get().refreshBookmarks();
 
-      await ensureNarrator().play({
-        chunks,
+      if (session !== narrationSession) return;
+      // The run happens in the background: awaiting it would keep every
+      // caller — the transport button, the reader — pending for a whole
+      // chapter.
+      ensureNarrator().play({
+        chunks: sessionChunks,
         startIndex,
         voiceId: narration.voiceId,
         rate: narration.speed,
@@ -533,7 +611,8 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       const { autoRewindSeconds } = useSettingsStore.getState().settings.narration;
       const narration = useSettingsStore.getState().settings.narration;
       const startIndex = chunkIndexAfterSeconds(chunks, chunkIndex, -autoRewindSeconds, speed);
-      await ensureNarrator().play({ chunks, startIndex, voiceId: narration.voiceId, rate: speed });
+      await ensureNarrator().pause();
+      ensureNarrator().play({ chunks, startIndex, voiceId: narration.voiceId, rate: speed });
     } catch (error) {
       set({ status: 'error', error: error instanceof Error ? error.message : String(error) });
     }
@@ -541,8 +620,12 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
 
   async stop() {
     get().clearSleep();
+    // The background chapter loader stops with the session.
+    narrationSession += 1;
     try {
-      await ensureNarrator().stop();
+      // The existing narrator, not a new one: stopping a session that never
+      // started must not load an engine.
+      await narrator?.stop();
     } catch {
       // Releasing an already-released engine is not an error.
     }
@@ -581,7 +664,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     try {
       const narration = useSettingsStore.getState().settings.narration;
       await ensureNarrator().pause();
-      await ensureNarrator().play({
+      ensureNarrator().play({
         chunks,
         startIndex: index,
         voiceId: narration.voiceId,
@@ -610,23 +693,40 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     } catch (error) {
       console.warn('Could not persist narration speed', error);
     }
+    // The next chunk is spoken at the new rate. The chunk that is playing now
+    // only changes when the engine can adjust it live; the system engine
+    // cannot, so it is restarted with the new rate.
+    const applied = await ensureNarrator().setRate(next);
+    if (applied) return;
     const { status, chunkIndex } = get();
-    // A paused engine runs no utterance, so restarting would resume playback;
-    // the new rate is picked up by the next resume instead.
     if (status === 'playing' && chunks.length > 0) {
-      try {
-        const narration = useSettingsStore.getState().settings.narration;
-        await ensureNarrator().pause();
-        await ensureNarrator().play({
-          chunks,
-          startIndex: chunkIndex,
-          voiceId: narration.voiceId,
-          rate: next,
-        });
-      } catch (error) {
-        set({ status: 'error', error: error instanceof Error ? error.message : String(error) });
-      }
+      await get().seekChunk(chunkIndex);
     }
+  },
+
+  /**
+   * Switches the voice of the running session. The narrator is rebuilt for the
+   * new engine and the current chunk is spoken again, so the change is heard
+   * straight away instead of at the next session.
+   */
+  async setVoice(voiceId: string | null, engine?: NarrationEngineId) {
+    const narration = useSettingsStore.getState().settings.narration;
+    const next = {
+      ...narration,
+      voiceId,
+      ...(engine ? { engine } : {}),
+    };
+    try {
+      await useSettingsStore.getState().setSetting('narration', next);
+    } catch (error) {
+      console.warn('Could not persist narration voice', error);
+    }
+    const { status, sourceId, storyId, chunkIndex } = get();
+    if (!sourceId || !storyId || chunks.length === 0) return;
+    if (status === 'idle' || status === 'error') return;
+    // The engine is bound to the narrator, so it is rebuilt for the new voice.
+    await releaseNarrator();
+    await get().seekChunk(chunkIndex);
   },
 
   setSleepMinutes(minutes) {
@@ -685,6 +785,45 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       if (chunks.length === 0) return;
     }
     await get().seekChunk(chunkIndex);
+  },
+
+  /**
+   * Jumps to a chapter of the current session. A chapter that the background
+   * loader has not reached yet is fetched first, so the queue is always
+   * playable.
+   */
+  async playChapter(chapterId: string) {
+    const { sourceId, storyId } = get();
+    if (!sourceId || !storyId) return;
+    const chapter = narrationChapterList.find((item) => item.id === chapterId);
+    if (!chapter) return;
+
+    if (!narrationPages.some((page) => page.index === chapter.position)) {
+      const rules = rulesForStory(usePronunciationStore.getState().rules, sourceId, storyId);
+      try {
+        let html = await chapterRepository.getContent(sourceId, storyId, chapter.id);
+        if (!html) html = await getChapterHtml(sourceId, storyId, chapter.id);
+        if (!html) return;
+        const text = chapterText(parseChapterBlocks(html)).text;
+        if (!text) return;
+        const mapped = applyPronunciationMapped(text, rules);
+        narrationPageMaps.set(chapter.position, { text, mapped });
+        narrationPages = [
+          ...narrationPages,
+          { index: chapter.position, content: mapped.text },
+        ].sort((a, b) => a.index - b.index);
+      } catch {
+        return;
+      }
+    }
+
+    // The chunk list is rebuilt so the chapters stay in reading order, in the
+    // same array the narrator holds.
+    const rebuilt = chunkPages(narrationPages);
+    if (rebuilt.length === 0) return;
+    chunks.splice(0, chunks.length, ...rebuilt);
+    set({ chunkCount: chunks.length });
+    await get().seekChunk(chunkIndexForPage(chunks, chapter.position));
   },
 
   async playNextInQueue() {

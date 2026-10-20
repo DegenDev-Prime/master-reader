@@ -40,6 +40,7 @@ import {
   type VoicePackStatus,
 } from '@/narration/voice-pack-store';
 import type { NarrationSettings } from '@/services/settings';
+import { useNarrationStore } from '@/stores/narration';
 import { useSettingsStore } from '@/stores/settings';
 import { formatBytes } from '@/utils/format';
 import { useBackToParent } from '@/navigation/use-parent-back';
@@ -73,6 +74,8 @@ export default function NarrationSettingsScreen() {
   const backToParent = useBackToParent();
   const settings = useSettingsStore((state) => state.settings);
   const setSetting = useSettingsStore((state) => state.setSetting);
+  const setSpeed = useNarrationStore((state) => state.setSpeed);
+  const setVoice = useNarrationStore((state) => state.setVoice);
   const [voices, setVoices] = useState<VoiceInfo[] | null>(null);
   const [voicesError, setVoicesError] = useState(false);
   const [voiceQuery, setVoiceQuery] = useState('');
@@ -128,7 +131,7 @@ export default function NarrationSettingsScreen() {
     setPackProgress({ received: 0, total: def.bytes });
     try {
       await installVoicePack(def, (progress) => setPackProgress(progress));
-      updateNarration({ voiceId: def.id });
+      await setVoice(def.id);
       await refreshPacks();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -142,7 +145,7 @@ export default function NarrationSettingsScreen() {
 
   const removePack = async (def: VoicePackDef) => {
     deleteVoicePack(def.id);
-    if (settings.narration.voiceId === def.id) updateNarration({ voiceId: null });
+    if (settings.narration.voiceId === def.id) await setVoice(null);
     await refreshPacks();
   };
 
@@ -184,7 +187,9 @@ export default function NarrationSettingsScreen() {
   };
 
   const toggleVoice = (voiceId: string) => {
-    updateNarration({ voiceId: settings.narration.voiceId === voiceId ? null : voiceId });
+    // The voice of a running session changes with it, so the player is told
+    // about the change instead of waiting for the next session.
+    void setVoice(settings.narration.voiceId === voiceId ? null : voiceId);
   };
 
   const toggleLanguage = (language: string) => {
@@ -252,7 +257,7 @@ export default function NarrationSettingsScreen() {
                   description={available ? option.description : t('narration.engineUnavailable')}
                   selected={engine === option.value}
                   disabled={!available}
-                  onPress={() => updateNarration({ engine: option.value, voiceId: null })}
+                  onPress={() => void setVoice(null, option.value)}
                 />
               );
             })}
@@ -462,7 +467,7 @@ export default function NarrationSettingsScreen() {
               label={t('narration.speed')}
               options={speedOptions}
               value={nearestSpeedOption(settings.narration.speed)}
-              onChange={(value) => updateNarration({ speed: Number(value) })}
+              onChange={(value) => void setSpeed(Number(value))}
               framed={false}
             />
           </View>

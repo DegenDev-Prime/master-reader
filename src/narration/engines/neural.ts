@@ -1,6 +1,6 @@
 import { File } from 'expo-file-system';
 
-import { isAudioPlaying, pauseAudio, playAudioFile } from '../audio-output';
+import { isAudioPlaying, pauseAudio, playAudioFile, setAudioRate } from '../audio-output';
 import { NarrationStoppedError, type NarratorEngine, type SpeakRequest } from '../engine';
 import { getSherpaTtsModule } from '../native/sherpa-tts';
 import { synthCacheKey, synthCachePath, synthCacheStore } from '../synth-store';
@@ -148,6 +148,12 @@ export function createNeuralEngine(
     },
 
     prefetch,
+
+    async setRate(rate: number): Promise<boolean> {
+      // The audio is synthesized at 1x and the player applies the rate, so a
+      // speed change is a live parameter update: no re-synthesis, no restart.
+      return setAudioRate(rate);
+    },
 
     async stop(): Promise<void> {
       aborted = true;

@@ -61,6 +61,8 @@ type NarrationState = {
   chunkStartedAt: number;
   /** Seconds into the current chunk, for the player's clock. */
   positionInChunk: () => number;
+  /** The real time the voice has been speaking, in milliseconds. */
+  elapsedMs: () => number;
   /** The chapters of the loaded window, for the player's queue. */
   chapterWindow: { id: string; position: number; title: string }[];
   /** Total chapters of the story, when known. */
@@ -129,6 +131,12 @@ let sleepTimeout: ReturnType<typeof setTimeout> | null = null;
 let narrationSession = 0;
 /** Where the voice was when it stopped, so the clock does not keep running. */
 let pausedPosition = 0;
+/**
+ * The real time the voice has spent speaking. The word count is only an
+ * estimate, and a voice that pauses at punctuation runs slower than it, so
+ * the clock counts the time the voice actually took.
+ */
+let spokenMs = 0;
 
 /**
  * Builds narration pages from chapter-based sources. Starts at the reader's
@@ -341,17 +349,24 @@ function ensureNarrator(): Narrator {
       },
       {
         onStatus: (status) => {
+          const now = Date.now();
           if (status !== 'playing') {
             pausedPosition = livePosition();
+            // The time spent so far belongs to the voice, the pause does not.
+            spokenMs += Math.max(0, now - useNarrationStore.getState().chunkStartedAt);
           }
-          useNarrationStore.setState({ status });
+          useNarrationStore.setState({ status, chunkStartedAt: now });
         },
-        onChunk: (index) =>
+        onChunk: (index) => {
+          const now = Date.now();
+          const previous = useNarrationStore.getState().chunkStartedAt;
+          if (previous > 0) spokenMs += Math.max(0, now - previous);
           useNarrationStore.setState({
             chunkIndex: index,
             chunkText: chunks[index]?.text ?? null,
-            chunkStartedAt: Date.now(),
-          }),
+            chunkStartedAt: now,
+          });
+        },
         onDone: (reason) => {
           const store = useNarrationStore.getState();
           if (reason === 'sleep' || reason === 'endOfChapter') {
@@ -491,6 +506,8 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     // The narrator keeps this array, so the background loader can extend it.
     const sessionChunks: SpeechChunk[] = [];
     chunks = sessionChunks;
+    spokenMs = 0;
+    pausedPosition = 0;
     set({
       status: 'loading',
       sourceId,
@@ -703,6 +720,13 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     } catch (error) {
       set({ status: 'error', error: error instanceof Error ? error.message : String(error) });
     }
+  },
+
+  /** The real time the voice has been speaking, in milliseconds. */
+  elapsedMs(): number {
+    const { chunkStartedAt, status } = get();
+    if (status !== 'playing' || chunkStartedAt <= 0) return spokenMs;
+    return spokenMs + Math.max(0, Date.now() - chunkStartedAt);
   },
 
   positionInChunk() {

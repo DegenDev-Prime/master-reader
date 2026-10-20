@@ -81,6 +81,15 @@ describe('playerTiming with a known position', () => {
     expect(later.elapsedMs).toBeGreaterThan(atStart.elapsedMs);
   });
 
+  it('shows the real time when it is known', () => {
+    const estimated = playerTiming(chunks, 1, 1, 1);
+    const real = playerTiming(chunks, 1, 1, 1, 30_000);
+    expect(real.elapsedMs).toBe(30_000);
+    // The total is scaled by the same factor, so the bar stays honest.
+    expect(real.totalMs).toBeGreaterThan(estimated.totalMs);
+    expect(real.fraction).toBeLessThanOrEqual(1);
+  });
+
   it('never counts more than the chunk itself', () => {
     const beyond = playerTiming(chunks, 1, 1, 999);
     expect(beyond.elapsedMs).toBeLessThanOrEqual(beyond.totalMs);

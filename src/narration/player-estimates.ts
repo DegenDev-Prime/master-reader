@@ -62,6 +62,7 @@ export function playerTiming(
   chunkIndex: number,
   speed = 1,
   intoChunk = 0,
+  realElapsedMs = 0,
 ): PlayerTiming {
   if (chunks.length === 0) {
     return { elapsedMs: 0, totalMs: 0, remainingMs: 0, fraction: 0 };
@@ -81,13 +82,23 @@ export function playerTiming(
   const duration = estimateSeconds(chunks[index].text, speed);
   const into =
     index === last ? duration : intoChunk > 0 ? Math.min(intoChunk, duration) : duration / 2;
-  const elapsedMs = Math.round((offsets[index] + into) * 1000);
+  const estimatedElapsedMs = Math.round((offsets[index] + into) * 1000);
+
+  // The word count is an estimate, and a voice that pauses at punctuation
+  // runs slower than it. When the real time is known, the clock shows it and
+  // the total is scaled by the same factor, so the bar stays honest.
+  let elapsedMs = estimatedElapsedMs;
+  let scaledTotalMs = totalMs;
+  if (realElapsedMs > 0 && estimatedElapsedMs > 0) {
+    elapsedMs = realElapsedMs;
+    scaledTotalMs = Math.round(totalMs * Math.max(1, realElapsedMs / estimatedElapsedMs));
+  }
 
   return {
     elapsedMs,
-    totalMs,
-    remainingMs: Math.max(0, totalMs - elapsedMs),
-    fraction: Math.min(1, Math.max(0, elapsedMs / totalMs)),
+    totalMs: scaledTotalMs,
+    remainingMs: Math.max(0, scaledTotalMs - elapsedMs),
+    fraction: Math.min(1, Math.max(0, elapsedMs / scaledTotalMs)),
   };
 }
 

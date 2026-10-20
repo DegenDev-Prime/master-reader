@@ -246,6 +246,7 @@ export default function AudioScreen() {
   // while the voice speaks, so the value is computed on every render rather
   // than kept in a memo.
   const positionInChunk = useNarrationStore((state) => state.positionInChunk);
+  const elapsedMs = useNarrationStore((state) => state.elapsedMs);
   const [, setTick] = useState(0);
   useEffect(() => {
     if (status !== 'playing') return;
@@ -258,6 +259,7 @@ export default function AudioScreen() {
     chunkIndex,
     speed,
     positionInChunk(),
+    elapsedMs(),
   );
 
   return (

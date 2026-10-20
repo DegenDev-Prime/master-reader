@@ -800,63 +800,46 @@ Twelve screens. Each is specified with purpose, structure, states and interactio
 
 #### 6.2.11 Source manager
 
-**Purpose:** install, update and diagnose the extensions that provide content. This is the most trust-sensitive screen in the app.
+**Purpose:** show the built-in sources, what each one can do, and whether it is working. There is
+nothing to install: every source ships in the app, so this screen is a status page rather than a
+marketplace.
 
 **Key elements**
 
-- App bar: back, `Sources`, `+` (add repository), overflow (`Check for updates`, `Developer mode`, `Diagnostics`).
-- Summary: `12 installed · 2 updates · 1 broken`.
-- Repositories section: URL, last sync, source count, overflow (refresh, remove).
-- Installed list: 40dp icon/initial, name, language, version, status chip (`OK`, `Update`, `Broken`), enable switch.
-- Add repository sheet: URL input, `Add`, explanation that extensions run in a sandbox and network access is brokered by the app.
-- Broken source detail: error class, last successful fetch, `Retry`, `Open logs`, `Remove`.
-- Empty state: `No sources yet` / `Add a repository URL to install sources.` / `Add repository`; link to docs.
+- App bar: back, `Sources`.
+- Summary line: how many sources are reachable.
+- One row per source: name, host, a capability row (`Popular`, `Latest`, `Search`, `Tags`,
+  `Categories`), a health chip (`OK`, `Failing`, `Untested`) and the time of the last check.
+- Pull to refresh re-checks every source.
+- Per-row `Check` button runs a single probe for that source.
+- Offline mode shows the offline banner and skips the probes.
 
 **Wireframe**
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ ←  Sources                                    +     ⋮    │
-│  12 installed · 2 updates · 1 broken                     │
+│ ←  Sources                                                │
 │                                                          │
-│  REPOSITORIES                                            │
+│  5 of 7 sources reachable                                │
+│                                                          │
 │  ┌──────────────────────────────────────────────────────┐│
-│  │ github.com/me/extensions                             ││
-│  │ Last sync 08:42 · 12 sources                    ⋮    ││
+│  │ Royal Road                                  OK      ││
+│  │ www.royalroad.com                                   ││
+│  │ Popular · Latest · Search · Categories   12:04  ✓   ││
 │  └──────────────────────────────────────────────────────┘│
-│                                                          │
-│  INSTALLED                                               │
 │  ┌──────────────────────────────────────────────────────┐│
-│  │ [N] NovelUpdates     EN   1.2.0   OK          [●]    ││
-│  │ [R] Royal Road       EN   2.0.1   Update      [●]    ││
-│  │ [S] Syosetu          JA   0.9.0   Broken      [●]    ││
+│  │ Scribble Hub                              Failing    ││
+│  │ www.scribblehub.com                                 ││
+│  │ Popular · Latest · Search · Categories   12:04  !   ││
 │  └──────────────────────────────────────────────────────┘│
-│                                                          │
-│  + Add repository                                        │
 └──────────────────────────────────────────────────────────┘
 ```
 
 **States**
 
-| State            | Design                                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------------------- |
-| No repositories  | Empty state with `Add repository` + `Import file`; explain that sources are user-supplied         |
-| Syncing          | Per-repo spinner + `Checking…`; list remains interactive                                          |
-| Repo error       | Inline `Couldn't reach repository` + `Retry` + `Edit URL`                                         |
-| Broken source    | Amber status; story screens still show cached content; `Diagnostics` copies a redacted report     |
-| Update available | `Update` chip + `Update all` in the overflow; per-source update does not require an app restart   |
-| Offline          | Cached repo metadata; add/update disabled with a reason                                           |
-| Removing         | Confirm `Remove source? Stories already in your library stay, but new chapters can't be fetched.` |
-
-**Notable interactions**
-
-- Toggle a source off → it disappears from Browse/Search but remains installed; library stories keep their cached chapters.
-- Tap a source → source detail: version, capabilities (`search`, `latest`, `categories`), last error, `Open in Browse`.
-- Long-press a repo → copy URL, refresh, remove.
-- `Developer mode` reveals the raw manifest, network log (redacted) and a `Reload sandbox` action; hidden behind 7 taps on the version row in About.
-- The add sheet validates URL shape and fetches the manifest before installing; show the source count and permissions before `Install`.
-
----
+- Untested: a source that has not been probed yet shows `Untested` and no timestamp.
+- Failing: the last attempt failed. The chip is red and the timestamp is the failure time.
+- Offline: probes are skipped and the banner explains why.
 
 #### 6.2.12 Audio
 

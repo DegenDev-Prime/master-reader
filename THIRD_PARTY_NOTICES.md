@@ -41,8 +41,8 @@ Individual ported files carry a header with the same attribution.
 
 ## Architecture references (no code copied)
 
-The transport design (Cloudflare single-flight solver, typed source errors, extension
-trust model) follows patterns studied in Mihon and Kotatsu. Their source code is
+The transport design (Cloudflare single-flight solver, typed source errors) follows patterns
+studied in Mihon and Kotatsu. Their source code is
 Apache-2.0 (Mihon) and GPL-3.0 (Kotatsu); no Kotatsu code is used. Mihon patterns are
 reimplemented, not copied.
 

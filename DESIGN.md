@@ -11,6 +11,11 @@
 > `src/app/story/[sourceId]/[id].tsx`, `src/app/reader/[sourceId]/[id].tsx`,
 > `src/app/downloads/*`. UI kit in `src/components/ui/*`.
 >
+> **Status:** this is the brief the rebuild was written against. The shipped screens have
+> moved on since (the reader is at `reader/[sourceId]/[novelId]/[chapterId]`, the extension
+> runtime is gone and the sources are built in). Read it for the design rules, not as a
+> description of the current tree.
+>
 > This file is a UI prescription only. It contains **no code**. It is written so two
 > frontend implementer agents can work simultaneously without colliding
 > (Agent A = "Shelf & Library", Agent B = "Player & Reader"). Each work order lists the

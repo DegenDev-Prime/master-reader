@@ -75,7 +75,7 @@ Owner split: S1 (data), S2 (runtime/transport/sanitizer), S3 (two ports).
 4. **Chapter sync (S4)**: `syncChapters`, progressive events, reindex transaction,
    orphan handling, `story_updates` insertion, aggregate downloads recompute.
 5. **Cleanup**: delete `src/extensions/**`, `ExtensionHost`, extension store/screen/DB
-   references; update `AGENTS.md`, `README.md`, `docs/EXTENSIONS.md`.
+   references; update `AGENTS.md`, `README.md` and drop `docs/EXTENSIONS.md`.
 6. **Legacy UI bridge**: old screens keep working by adapting service calls; no redesign.
 
 Gate: `npm run verify`; on device, Shadow Slave chapter list exceeds 25 via the new sync;

@@ -186,9 +186,11 @@ export default function AudioScreen() {
     }, [chapterWindow, currentChapterId, sourceId, storyId]),
   );
 
-  // The voices of the current engine, loaded when the picker is opened.
+  // The voices of the current engine. They are loaded up front so the player
+  // can name the voice in use, and again when the picker opens in case a
+  // voice was installed in the meantime.
+  const [voiceRefresh, setVoiceRefresh] = useState(0);
   useEffect(() => {
-    if (!voiceSheet) return;
     let cancelled = false;
     void listSelectableVoices(engine)
       .then((list) => {
@@ -200,7 +202,7 @@ export default function AudioScreen() {
     return () => {
       cancelled = true;
     };
-  }, [engine, voiceSheet]);
+  }, [engine, voiceRefresh]);
 
   // Load the engine while the player is on screen, so the model is ready when
   // the reader presses play.
@@ -351,7 +353,10 @@ export default function AudioScreen() {
                 sleepLabel={sleepLabel(sleep)}
                 onPressSleep={() => openTarget(NARRATION_SETTINGS)}
                 voiceLabel={voiceLabel}
-                onPressVoice={() => setVoiceSheet(true)}
+                onPressVoice={() => {
+                  setVoiceRefresh((count) => count + 1);
+                  setVoiceSheet(true);
+                }}
                 onPressBookmark={() => void addBookmark()}
                 bookmarked={bookmarks.length > 0}
               />

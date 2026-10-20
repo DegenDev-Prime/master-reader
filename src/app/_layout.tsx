@@ -83,7 +83,6 @@ function RootNavigator() {
         <Stack.Screen name="settings/backup" />
         <Stack.Screen name="settings/about" />
         <Stack.Screen name="restore" />
-        <Stack.Screen name="sources" />
         <Stack.Screen name="pronunciation" />
         <Stack.Screen name="export" />
       </Stack>

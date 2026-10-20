@@ -123,7 +123,7 @@ npm run format        # prettier --write
 npm run format:check  # prettier --check
 npm run test          # vitest run
 npm run db:generate   # generate a migration from src/db/schema.ts
-npm run verify        # typecheck + lint + test (mirrors CI)
+npm run verify        # format:check + typecheck + lint + test (mirrors CI)
 ```
 
 ## Installation

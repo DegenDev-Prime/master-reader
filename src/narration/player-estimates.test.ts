@@ -68,6 +68,25 @@ describe('playerTiming', () => {
   });
 });
 
+describe('playerTiming with a known position', () => {
+  const chunks = [
+    { text: 'one two three four five six seven eight nine ten' },
+    { text: 'eleven twelve thirteen fourteen fifteen sixteen' },
+    { text: 'seventeen eighteen nineteen twenty' },
+  ];
+
+  it('counts the position inside the current chunk', () => {
+    const atStart = playerTiming(chunks, 1, 1, 0);
+    const later = playerTiming(chunks, 1, 1, 1.5);
+    expect(later.elapsedMs).toBeGreaterThan(atStart.elapsedMs);
+  });
+
+  it('never counts more than the chunk itself', () => {
+    const beyond = playerTiming(chunks, 1, 1, 999);
+    expect(beyond.elapsedMs).toBeLessThanOrEqual(beyond.totalMs);
+  });
+});
+
 describe('chunkOffsets', () => {
   it('starts the first chunk at zero and adds up the lengths', () => {
     const chunks = [

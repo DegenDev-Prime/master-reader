@@ -1,4 +1,4 @@
-import { estimateChunkSeconds, NarrationStoppedError, type NarratorEngine } from './engine';
+import { NarrationStoppedError, type NarratorEngine } from './engine';
 import { chunkOffsets, estimateSeconds } from './player-estimates';
 import type { SpeechChunk } from './chunker';
 import { isSleepTimerExpired, type SleepTimerState } from './sleep-timer';
@@ -232,22 +232,24 @@ function clampIndex(index: number, length: number): number {
 }
 
 /**
- * Maps a seconds-based skip onto a chunk index. The position inside the
- * current chunk is unknown, so the chunk is taken to be half spoken, which is
- * the same assumption the player's time display makes. A skip that reaches
- * past the current chunk lands on the next one, and a rewind lands on the
- * previous one.
+ * Maps a seconds-based skip onto a chunk index. `intoChunk` is how far into the
+ * current chunk the voice is, when that is known. A skip that reaches past the
+ * current chunk lands on the next one, and a rewind lands on the previous one.
  */
 export function chunkIndexAfterSeconds(
   chunks: SpeechChunk[],
   fromIndex: number,
   seconds: number,
   rate: number,
+  intoChunk = 0,
 ): number {
   if (chunks.length === 0) return 0;
   const index = clampIndex(fromIndex, chunks.length);
   const offsets = chunkOffsets(chunks, rate);
-  const current = offsets[index] + estimateSeconds(chunks[index].text, rate) / 2;
+  const duration = estimateSeconds(chunks[index].text, rate);
+  // Without a known position the chunk is taken to be half spoken, which is
+  // the same assumption the player's time display makes.
+  const current = offsets[index] + (intoChunk > 0 ? intoChunk : duration / 2);
   const target = current + seconds;
 
   if (target <= 0) return 0;

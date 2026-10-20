@@ -271,6 +271,15 @@ describe('chunkIndexAfterSeconds', () => {
     expect(chunkIndexAfterSeconds(chunks, 1, 2.5, 1)).toBe(2);
   });
 
+  it('uses the known position inside the chunk when it is given', () => {
+    const chunks = makeChunks(5);
+    // Chunk 2 starts at four seconds, and the voice is one second into it.
+    // A two second rewind lands at three seconds, in chunk 1.
+    expect(chunkIndexAfterSeconds(chunks, 2, -2, 1, 1)).toBe(1);
+    // A five second rewind from there reaches the start of the session.
+    expect(chunkIndexAfterSeconds(chunks, 2, -5, 1, 1)).toBe(0);
+  });
+
   it('stays inside the session', () => {
     const chunks = makeChunks(3);
     expect(chunkIndexAfterSeconds(chunks, 0, -60, 1)).toBe(0);

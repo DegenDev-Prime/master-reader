@@ -61,6 +61,7 @@ export function playerTiming(
   chunks: readonly TimedChunk[],
   chunkIndex: number,
   speed = 1,
+  intoChunk = 0,
 ): PlayerTiming {
   if (chunks.length === 0) {
     return { elapsedMs: 0, totalMs: 0, remainingMs: 0, fraction: 0 };
@@ -74,13 +75,12 @@ export function playerTiming(
     return { elapsedMs: 0, totalMs: 0, remainingMs: 0, fraction: 0 };
   }
 
-  // How far into the current chunk the voice is, is unknown; the midpoint is
-  // the best estimate. The last chunk counts as fully spoken, so the bar can
-  // actually reach the end.
+  // How far into the current chunk the voice is: known while it speaks, and
+  // otherwise the midpoint is the best estimate. The last chunk counts as
+  // fully spoken, so the bar can actually reach the end.
+  const duration = estimateSeconds(chunks[index].text, speed);
   const into =
-    index === last
-      ? estimateSeconds(chunks[index].text, speed)
-      : estimateSeconds(chunks[index].text, speed) / 2;
+    index === last ? duration : intoChunk > 0 ? Math.min(intoChunk, duration) : duration / 2;
   const elapsedMs = Math.round((offsets[index] + into) * 1000);
 
   return {

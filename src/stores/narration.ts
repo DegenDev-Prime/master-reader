@@ -56,6 +56,11 @@ type NarrationState = {
   chunkCount: number;
   /** The text of the chunk being spoken, so a screen can show it live. */
   chunkText: string | null;
+  /** When the current chunk started speaking, so the voice's place in it is
+   *  known even though the engine reports no position. */
+  chunkStartedAt: number;
+  /** Seconds into the current chunk, for the player's clock. */
+  positionInChunk: () => number;
   /** The chapters of the loaded window, for the player's queue. */
   chapterWindow: { id: string; position: number; title: string }[];
   /** Total chapters of the story, when known. */
@@ -331,6 +336,7 @@ function ensureNarrator(): Narrator {
           useNarrationStore.setState({
             chunkIndex: index,
             chunkText: chunks[index]?.text ?? null,
+            chunkStartedAt: Date.now(),
           }),
         onDone: (reason) => {
           const store = useNarrationStore.getState();
@@ -429,6 +435,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
   chunkIndex: 0,
   chunkCount: 0,
   chunkText: null,
+  chunkStartedAt: 0,
   chapterWindow: [],
   chapterTotal: 0,
   speed: 1,
@@ -544,6 +551,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       set({
         chunkIndex: startIndex,
         chunkText: sessionChunks[startIndex]?.text ?? null,
+        chunkStartedAt: Date.now(),
         speed: narration.speed,
       });
 
@@ -653,6 +661,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       chunkIndex: 0,
       chunkCount: 0,
       chunkText: null,
+      chunkStartedAt: 0,
       chapterWindow: [],
       chapterTotal: 0,
       seriesPosition: -1,
@@ -682,10 +691,19 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     }
   },
 
+  positionInChunk() {
+    const { chunkStartedAt, status } = get();
+    if (chunkStartedAt <= 0 || status !== 'playing') return 0;
+    return Math.max(0, (Date.now() - chunkStartedAt) / 1000);
+  },
+
   async skip(seconds) {
-    const { chunkIndex, speed } = get();
+    const { chunkIndex, speed, chunkStartedAt } = get();
     if (chunks.length === 0) return;
-    await get().seekChunk(chunkIndexAfterSeconds(chunks, chunkIndex, seconds, speed));
+    // The voice's place inside the chunk is known from when it started
+    // speaking, so a skip of a few seconds really moves that far.
+    const intoChunk = chunkStartedAt > 0 ? (Date.now() - chunkStartedAt) / 1000 : 0;
+    await get().seekChunk(chunkIndexAfterSeconds(chunks, chunkIndex, seconds, speed, intoChunk));
   },
 
   /**

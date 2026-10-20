@@ -242,10 +242,22 @@ export default function AudioScreen() {
   }, [voiceId, voices]);
 
   // Playback timing of the loaded session. The chunk list grows as the
-  // background loader adds chapters, so its length is a dependency.
+  // background loader adds chapters, so its length is a dependency. The clock
+  // ticks so the time and the bar move while the voice is speaking.
+  const positionInChunk = useNarrationStore((state) => state.positionInChunk);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (status !== 'playing') return;
+    const timer = setInterval(() => setTick((count) => count + 1), 1000);
+    return () => clearInterval(timer);
+  }, [status]);
+
   const timing = useMemo(
-    () => playerTiming(narrationChunks().slice(0, chunkCount), chunkIndex, speed),
-    [chunkIndex, speed, chunkCount],
+    () =>
+      playerTiming(narrationChunks().slice(0, chunkCount), chunkIndex, speed, positionInChunk()),
+    // The tick makes the clock move.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [chunkIndex, speed, chunkCount, status],
   );
 
   return (

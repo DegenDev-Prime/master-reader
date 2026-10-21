@@ -5,6 +5,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 
 import { t } from '@/i18n';
 import { NowPlayingCard } from '@/components/audio/now-playing-card';
+import { PlaybackClock } from '@/components/audio/playback-clock';
 import { PlayerTransport } from '@/components/audio/player-transport';
 import { UpNextList, type UpNextItem } from '@/components/audio/up-next-list';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,7 @@ import { narrationRepository } from '@/db/repositories/narration';
 import { novelRepository } from '@/db/repositories/novels';
 import { useTheme } from '@/hooks/use-theme';
 import { listSelectableVoices, type SelectableVoice } from '@/narration/available-voices';
-import { formatChapterLength, formatDuration, playerTiming } from '@/narration/player-estimates';
+import { formatChapterLength } from '@/narration/player-estimates';
 import { sleepTimerRemainingMs, type SleepTimerState as SleepMode } from '@/narration/sleep-timer';
 import { deriveChapterNav, NARRATION_SPEED_VALUES } from '@/components/ui/transport-state';
 import { openReader } from '@/navigation/routes';
@@ -245,23 +246,6 @@ export default function AudioScreen() {
   // background loader adds chapters, so its length matters. The clock ticks
   // while the voice speaks, so the value is computed on every render rather
   // than kept in a memo.
-  const positionInChunk = useNarrationStore((state) => state.positionInChunk);
-  const elapsedMs = useNarrationStore((state) => state.elapsedMs);
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    if (status !== 'playing') return;
-    const timer = setInterval(() => setTick((count) => count + 1), 1000);
-    return () => clearInterval(timer);
-  }, [status]);
-
-  const timing = playerTiming(
-    narrationChunks().slice(0, chunkCount),
-    chunkIndex,
-    speed,
-    positionInChunk(),
-    elapsedMs(),
-  );
-
   return (
     <Screen>
       <ScreenHeader
@@ -323,32 +307,7 @@ export default function AudioScreen() {
                 </ThemedText>
               ) : null}
 
-              <View style={styles.progressBlock}>
-                <View style={styles.progressLabels}>
-                  <ThemedText type="small" themeColor="textMuted">
-                    {t('player.partOf', {
-                      current: chunkIndex + 1,
-                      total: Math.max(chunkCount, 1),
-                    })}
-                  </ThemedText>
-                  {timing.totalMs > 0 ? (
-                    <ThemedText type="small" themeColor="textMuted">
-                      {`${formatDuration(timing.elapsedMs)} / ${formatDuration(timing.totalMs)}`}
-                    </ThemedText>
-                  ) : null}
-                </View>
-                <View style={[styles.track, { backgroundColor: theme.border }]}>
-                  <View
-                    style={[
-                      styles.fill,
-                      {
-                        backgroundColor: theme.primary,
-                        width: `${timing.fraction * 100}%`,
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
+              <PlaybackClock chunkIndex={chunkIndex} chunkCount={chunkCount} speed={speed} />
 
               <PlayerTransport
                 playing={status === 'playing'}
@@ -547,10 +506,6 @@ const styles = StyleSheet.create({
   content: { gap: Spacing.four, padding: Spacing.three, paddingBottom: Spacing.six },
   section: { gap: Spacing.two },
   card: { borderWidth: StyleSheet.hairlineWidth },
-  progressBlock: { gap: Spacing.two },
-  progressLabels: { flexDirection: 'row', justifyContent: 'space-between' },
-  track: { height: 2, overflow: 'hidden' },
-  fill: { height: 2 },
   recentRow: {
     alignItems: 'center',
     flexDirection: 'row',

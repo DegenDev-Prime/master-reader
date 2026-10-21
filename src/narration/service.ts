@@ -221,6 +221,7 @@ export class Narrator {
   }
 
   private setStatus(status: NarrationStatus): void {
+    if (this.status === status) return;
     this.status = status;
     this.listener.onStatus?.(status);
   }

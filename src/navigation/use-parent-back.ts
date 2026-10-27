@@ -80,7 +80,13 @@ export function useBackToParent() {
         router.dismissTo(href(target));
         return;
       }
-      router.back();
+      if (router.canGoBack()) {
+        router.back();
+        return;
+      }
+      // Opened from a link, so there is no history to step back through; the
+      // parent is still the right destination.
+      router.navigate(href(target));
     },
     [navigation],
   );

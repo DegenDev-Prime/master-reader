@@ -493,7 +493,11 @@
     "pronunciation": "Pronunciation",
     "exportStories": "Export stories",
     "manageSources": "Manage sources",
-    "manageSourcesDescription": "Check each provider and see which ones are reachable"
+    "manageSourcesDescription": "Check each provider and see which ones are reachable",
+    "narrationCache": "Narration audio",
+    "narrationCacheDescription": "{{size}} of synthesized speech, regenerated when needed",
+    "clearNarrationCacheTitle": "Delete narration audio?",
+    "clearNarrationCacheMessage": "The audio is rebuilt the next time it is spoken. Nothing you downloaded is removed."
   },
   "backup": {
     "doneTitle": "Backup",

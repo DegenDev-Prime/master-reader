@@ -40,16 +40,29 @@ export function estimateSeconds(text: string, speed = 1): number {
  * The start time of every chunk on the session timeline, in seconds. The
  * engine reports no position, so the timeline is built from the estimated
  * length of each chunk.
+ *
+ * The clock recomputes this every second while the voice speaks, so the result
+ * is kept for the session's chunk array: a long serial has thousands of chunks
+ * and splitting every one of them once a second would cost more than the
+ * speech itself.
  */
 export function chunkOffsets(chunks: readonly TimedChunk[], speed = 1): number[] {
+  const cached = offsetsCache.get(chunks);
+  if (cached && cached.length === chunks.length && cached.speed === speed) {
+    return cached.offsets;
+  }
   const offsets: number[] = [];
   let elapsed = 0;
   for (const chunk of chunks) {
     offsets.push(elapsed);
     elapsed += estimateSeconds(chunk.text, speed);
   }
+  offsetsCache.set(chunks, { length: chunks.length, speed, offsets });
   return offsets;
 }
+
+type OffsetsCacheEntry = { length: number; speed: number; offsets: number[] };
+const offsetsCache = new WeakMap<readonly TimedChunk[], OffsetsCacheEntry>();
 
 /**
  * Playback timing for a chunk list. The elapsed part counts the chunks before
@@ -63,14 +76,17 @@ export function playerTiming(
   speed = 1,
   intoChunk = 0,
   realElapsedMs = 0,
+  count = chunks.length,
 ): PlayerTiming {
-  if (chunks.length === 0) {
+  if (chunks.length === 0 || count <= 0) {
     return { elapsedMs: 0, totalMs: 0, remainingMs: 0, fraction: 0 };
   }
 
-  const index = Math.min(Math.max(chunkIndex, 0), chunks.length - 1);
+  // `count` is how much of the session is loaded; the chunk array itself keeps
+  // growing behind the clock, and passing it whole lets the offsets cache hit.
+  const last = Math.min(count, chunks.length) - 1;
+  const index = Math.min(Math.max(chunkIndex, 0), last);
   const offsets = chunkOffsets(chunks, speed);
-  const last = chunks.length - 1;
   const totalMs = Math.round((offsets[last] + estimateSeconds(chunks[last].text, speed)) * 1000);
   if (totalMs <= 0) {
     return { elapsedMs: 0, totalMs: 0, remainingMs: 0, fraction: 0 };

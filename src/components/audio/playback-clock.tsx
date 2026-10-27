@@ -34,11 +34,12 @@ export const PlaybackClock = memo(function PlaybackClock({
   const elapsedMsAt = useNarrationStore((state) => state.elapsedMsAt);
 
   const timing = playerTiming(
-    narrationChunks().slice(0, chunkCount),
+    narrationChunks(),
     chunkIndex,
     speed,
     positionAt(now),
     elapsedMsAt(now),
+    chunkCount,
   );
 
   return (

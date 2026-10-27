@@ -23,6 +23,7 @@ import { ChapterBody } from '@/components/reader/chapter-body';
 import { DisplaySheet } from '@/components/reader/display-sheet';
 import { ReaderChrome } from '@/components/reader/reader-chrome';
 import { OptionSheet } from '@/components/ui/option-sheet';
+import { NARRATION_SPEED_VALUES, nearestSpeedOption } from '@/components/ui/transport-state';
 import {
   chapterReadsRepository,
   chapterRepository,
@@ -77,6 +78,7 @@ export default function ReaderScreen() {
   const [pct, setPct] = useState(0);
   const [chromeVisible, setChromeVisible] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
+  const [speedOpen, setSpeedOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -103,6 +105,13 @@ export default function ReaderScreen() {
   const pauseNarration = useNarrationStore((store) => store.pause);
   const resumeNarration = useNarrationStore((store) => store.resume);
   const seekNarration = useNarrationStore((store) => store.seekChunk);
+  const skipNarration = useNarrationStore((store) => store.skip);
+  const setNarrationSpeed = useNarrationStore((store) => store.setSpeed);
+  const narrationSpeed = useNarrationStore((store) => store.speed);
+  const hasNarration = useNarrationStore(
+    (store) => store.sourceId === sourceId && store.storyId === novelId && store.chunkCount > 0,
+  );
+  const skipSeconds = useSettingsStore((state) => state.settings.narration.skipSeconds);
   const listening =
     narrationStatus === 'playing' || narrationStatus === 'paused' || narrationStatus === 'loading';
 
@@ -293,12 +302,10 @@ export default function ReaderScreen() {
   const backToParent = useBackToParent();
 
   const handleBack = useCallback(() => {
-    if (chromeVisible) {
-      setChromeVisible(false);
-      return;
-    }
+    // The top bar is only visible after a deliberate tap, so hiding it first
+    // would make every press look ignored. Back means back.
     backToParent(chaptersTarget);
-  }, [backToParent, chaptersTarget, chromeVisible]);
+  }, [backToParent, chaptersTarget]);
 
   useFocusEffect(
     useCallback(() => {
@@ -390,28 +397,47 @@ export default function ReaderScreen() {
 
   const onListen = useCallback(() => {
     if (!sourceId || !novelId) return;
-    if (narrationStatus === 'playing') {
-      void pauseNarration();
-      return;
-    }
-    if (narrationStatus === 'paused') {
+    if (narrationStatus === 'loading') return;
+    // Both screens drive the same session, so this is the whole rule: if the
+    // voice is already in this chapter, toggle it; if it is elsewhere in the
+    // loaded window, move it here; otherwise start a session at this chapter.
+    if (listening && meta) {
       const all = narrationChunks();
-      const current = all[narrationChunkIndex];
-      const target = meta ? all.findIndex((chunk) => chunk.pageIndex === meta.position) : -1;
-      if (target >= 0 && current?.pageIndex !== meta?.position) {
-        void seekNarration(target);
-      } else if (target >= 0) {
-        void resumeNarration();
-      } else {
-        void playNarration(sourceId, novelId, title);
+      const target = all.findIndex((chunk) => chunk.pageIndex === meta.position);
+      if (target >= 0) {
+        const current = all[narrationChunkIndex];
+        if (current?.pageIndex !== meta.position) {
+          void seekNarration(target);
+          return;
+        }
+        if (narrationStatus === 'playing') {
+          void pauseNarration();
+          return;
+        }
+        if (narrationStatus === 'paused') {
+          void resumeNarration();
+          return;
+        }
       }
-      return;
     }
     if (narrationError) {
       Alert.alert(t('reader.listen'), narrationError);
     }
-    void playNarration(sourceId, novelId, title);
+    // A loaded session that already finished or failed is replayed in place:
+    // rebuilding it would reload the whole window for nothing.
+    if (hasNarration && !listening) {
+      const all = narrationChunks();
+      const target = meta ? all.findIndex((chunk) => chunk.pageIndex === meta.position) : -1;
+      void seekNarration(
+        target >= 0 ? target : Math.min(narrationChunkIndex, all.length - 1),
+        true,
+      );
+      return;
+    }
+    void playNarration(sourceId, novelId, title, meta?.id ?? null);
   }, [
+    hasNarration,
+    listening,
     meta,
     narrationChunkIndex,
     narrationError,
@@ -459,21 +485,24 @@ export default function ReaderScreen() {
     return blockIndexForRange(textInfo.spans, range);
   }, [listening, mappedNarration, meta, narrationChunkIndex, textInfo.spans]);
 
-  const onBlockPress = useCallback(
+  // A tap anywhere asks for the controls, even while the voice is running:
+  // otherwise the chrome is unreachable exactly when it is wanted.
+  const onBlockPress = useCallback(() => {
+    setChromeVisible((visible) => !visible);
+  }, []);
+
+  // Long press on a paragraph sends the voice there.
+  const onBlockLongPress = useCallback(
     (blockIndex: number) => {
-      if (listening && blockIndex >= 0 && meta && mappedNarration) {
-        const all = narrationChunks();
-        const target = chunkIndexForBlock(
-          all,
-          mappedNarration,
-          textInfo.spans,
-          blockIndex,
-          meta.position,
-        );
-        if (target != null) void seekNarration(target);
-        return;
-      }
-      setChromeVisible((visible) => !visible);
+      if (!listening || !meta || !mappedNarration) return;
+      const target = chunkIndexForBlock(
+        narrationChunks(),
+        mappedNarration,
+        textInfo.spans,
+        blockIndex,
+        meta.position,
+      );
+      if (target != null) void seekNarration(target);
     },
     [listening, mappedNarration, meta, seekNarration, textInfo.spans],
   );
@@ -581,6 +610,7 @@ export default function ReaderScreen() {
         followHighlight={listening && narrationStatus === 'playing'}
         onProgress={onProgress}
         onBlockPress={onBlockPress}
+        onBlockLongPress={onBlockLongPress}
         onNext={onNextChapter}
         onBackToChapters={openChapters}
         onMarkRead={onMarkReadPress}
@@ -594,7 +624,8 @@ export default function ReaderScreen() {
         percent={pct}
         canPrevious={previous != null}
         canNext={next != null}
-        listening={narrationStatus === 'playing' || narrationStatus === 'loading'}
+        hasSession={hasNarration}
+        playing={narrationStatus === 'playing'}
         onBack={handleBack}
         onMore={() => setMenuOpen(true)}
         onPrevious={() => goTo(previous)}
@@ -605,28 +636,55 @@ export default function ReaderScreen() {
         }}
         onListen={onListen}
         onNext={() => goTo(next)}
+        onRewind={() => void skipNarration(-skipSeconds)}
+        onForward={() => void skipNarration(skipSeconds)}
+        skipLabel={t('narration.skipSeconds', { count: skipSeconds })}
+        speedLabel={t('narration.speedValue', { value: narrationSpeed })}
+        onSpeed={() => setSpeedOpen(true)}
       />
 
-      {!chromeVisible && narrationStatus === 'playing' ? (
-        <Pressable
-          onPress={onListen}
+      {!chromeVisible && hasNarration ? (
+        <View
           style={[
-            styles.listeningPill,
+            styles.listeningBar,
             {
               backgroundColor: palette.surface,
               borderColor: palette.border,
-              bottom: insets.bottom + 40,
+              bottom: insets.bottom + 24,
             },
           ]}
-          accessibilityRole="button"
-          accessibilityLabel={t('reader.pause')}
         >
-          <Ionicons name="volume-medium" size={16} color={palette.link} />
-          <Text style={[styles.listeningText, { color: palette.text }]}>
-            {t('reader.listening')}
-          </Text>
-          <Ionicons name="pause" size={16} color={palette.text} />
-        </Pressable>
+          <Pressable
+            onPress={() => void skipNarration(-skipSeconds)}
+            style={styles.listeningAction}
+            accessibilityRole="button"
+            accessibilityLabel={t('player.rewind', { seconds: skipSeconds })}
+          >
+            <Ionicons name="play-back" size={20} color={palette.text} />
+          </Pressable>
+          <Pressable
+            onPress={onListen}
+            style={styles.listeningAction}
+            accessibilityRole="button"
+            accessibilityLabel={
+              narrationStatus === 'playing' ? t('reader.pause') : t('reader.listen')
+            }
+          >
+            <Ionicons
+              name={narrationStatus === 'playing' ? 'pause' : 'play'}
+              size={22}
+              color={palette.link}
+            />
+          </Pressable>
+          <Pressable
+            onPress={() => void skipNarration(skipSeconds)}
+            style={styles.listeningAction}
+            accessibilityRole="button"
+            accessibilityLabel={t('player.forward', { seconds: skipSeconds })}
+          >
+            <Ionicons name="play-forward" size={20} color={palette.text} />
+          </Pressable>
+        </View>
       ) : null}
 
       <DisplaySheet
@@ -635,6 +693,21 @@ export default function ReaderScreen() {
         palette={palette}
         onChange={updateReader}
         onClose={() => setDisplayOpen(false)}
+      />
+
+      <OptionSheet
+        visible={speedOpen}
+        title={t('narration.speed')}
+        value={nearestSpeedOption(narrationSpeed)}
+        options={NARRATION_SPEED_VALUES.map((value) => ({
+          value: String(value),
+          label: t('narration.speedValue', { value }),
+        }))}
+        onSelect={(value) => {
+          if (value != null) void setNarrationSpeed(Number(value));
+          setSpeedOpen(false);
+        }}
+        onClose={() => setSpeedOpen(false)}
       />
 
       <OptionSheet
@@ -719,15 +792,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   stateSecondaryLabel: { fontSize: 15, fontWeight: '500' },
-  listeningPill: {
+  listeningBar: {
     alignItems: 'center',
     alignSelf: 'center',
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    gap: 8,
-    minHeight: 40,
-    paddingHorizontal: 14,
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     position: 'absolute',
   },
-  listeningText: { fontSize: 13, fontWeight: '500' },
+  listeningAction: {
+    alignItems: 'center',
+    height: 40,
+    justifyContent: 'center',
+    width: 44,
+  },
 });

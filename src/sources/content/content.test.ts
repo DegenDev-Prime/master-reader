@@ -75,3 +75,21 @@ describe('parseChapterBlocks', () => {
     expect(blocks[0].kind).toBe('paragraph');
   });
 });
+
+describe('parseChapterBlocks dividers', () => {
+  it('turns a punctuation-only paragraph into a divider instead of text', () => {
+    const blocks = parseChapterBlocks('<p>One.</p><p>***</p><p>◇◇◇</p><p>Two.</p>');
+    expect(blocks.map((block) => block.kind)).toEqual([
+      'paragraph',
+      'divider',
+      'divider',
+      'paragraph',
+    ]);
+  });
+
+  it('keeps a paragraph that merely starts with punctuation', () => {
+    const blocks = parseChapterBlocks('<p>...and then she left.</p>');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].kind).toBe('paragraph');
+  });
+});

@@ -1,4 +1,4 @@
-export const SYNTH_CACHE_CAP_BYTES = 300 * 1024 * 1024;
+export const SYNTH_CACHE_CAP_BYTES = 100 * 1024 * 1024;
 
 export type CacheEntry = { bytes: number; accessedAt: number };
 export type CacheIndex = Record<string, CacheEntry>;
@@ -28,4 +28,23 @@ export function selectEvictions(
     evict.push(key);
   }
   return evict;
+}
+
+/**
+ * Drops index entries whose file is gone. Android is free to clear the cache
+ * directory, and an index that still counts those bytes evicts real files
+ * while the phantoms stay, so the cache slowly stops working.
+ */
+export function reconcileIndex(index: CacheIndex, presentFiles: ReadonlySet<string>): CacheIndex {
+  const next: CacheIndex = {};
+  for (const [key, entry] of Object.entries(index)) {
+    if (presentFiles.has(cacheFileName(key))) next[key] = entry;
+  }
+  return next;
+}
+
+/** Cache files the index does not account for, e.g. a synthesis that was killed. */
+export function orphanNames(index: CacheIndex, names: readonly string[]): string[] {
+  const known = new Set(Object.keys(index).map(cacheFileName));
+  return names.filter((name) => name.endsWith('.wav') && !known.has(name));
 }

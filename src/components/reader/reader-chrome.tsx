@@ -17,7 +17,9 @@ type Props = {
   percent: number;
   canPrevious: boolean;
   canNext: boolean;
-  listening: boolean;
+  /** Whether this story has a narration session, so the voice controls show. */
+  hasSession: boolean;
+  playing: boolean;
   onBack: () => void;
   onMore: () => void;
   onPrevious: () => void;
@@ -25,6 +27,13 @@ type Props = {
   onDisplay: () => void;
   onListen: () => void;
   onNext: () => void;
+  /** Moves the voice by the configured skip interval. */
+  onRewind: () => void;
+  onForward: () => void;
+  /** The skip interval, e.g. "15s". */
+  skipLabel: string;
+  speedLabel: string;
+  onSpeed: () => void;
 };
 
 export function ReaderChrome({
@@ -35,7 +44,8 @@ export function ReaderChrome({
   percent,
   canPrevious,
   canNext,
-  listening,
+  hasSession,
+  playing,
   onBack,
   onMore,
   onPrevious,
@@ -43,6 +53,11 @@ export function ReaderChrome({
   onDisplay,
   onListen,
   onNext,
+  onRewind,
+  onForward,
+  skipLabel,
+  speedLabel,
+  onSpeed,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [opacity] = useState(() => new Animated.Value(0));
@@ -118,6 +133,67 @@ export function ReaderChrome({
             />
           </View>
         </View>
+
+        {/* The voice controls live here, on the screen that shows the text
+            being spoken, so listening never needs a trip to the Audio tab. */}
+        {hasSession ? (
+          <View style={styles.transport}>
+            <Pressable
+              onPress={onRewind}
+              accessibilityRole="button"
+              accessibilityLabel={t('player.rewind', { seconds: skipLabel })}
+              style={({ pressed }) => [
+                styles.transportButton,
+                pressed && { backgroundColor: palette.surface },
+              ]}
+            >
+              <Ionicons name="play-back" size={22} color={palette.text} />
+              <Text style={[styles.transportLabel, { color: palette.muted }]}>{skipLabel}</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={onListen}
+              accessibilityRole="button"
+              accessibilityLabel={playing ? t('reader.pause') : t('reader.listen')}
+              style={({ pressed }) => [
+                styles.transportPlay,
+                { borderColor: palette.border },
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Ionicons name={playing ? 'pause' : 'play'} size={26} color={palette.text} />
+            </Pressable>
+
+            <Pressable
+              onPress={onForward}
+              accessibilityRole="button"
+              accessibilityLabel={t('player.forward', { seconds: skipLabel })}
+              style={({ pressed }) => [
+                styles.transportButton,
+                pressed && { backgroundColor: palette.surface },
+              ]}
+            >
+              <Ionicons name="play-forward" size={22} color={palette.text} />
+              <Text style={[styles.transportLabel, { color: palette.muted }]}>{skipLabel}</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={onSpeed}
+              accessibilityRole="button"
+              accessibilityLabel={t('narration.speed')}
+              style={({ pressed }) => [
+                styles.transportSpeed,
+                { borderColor: palette.border },
+                pressed && { backgroundColor: palette.surface },
+              ]}
+            >
+              <Text style={[styles.transportSpeedLabel, { color: palette.text }]}>
+                {speedLabel}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <View style={styles.actions}>
           <Action
             icon="chevron-back"
@@ -128,12 +204,14 @@ export function ReaderChrome({
           />
           <Action icon="list" label={t('reader.chapters')} palette={palette} onPress={onChapters} />
           <Action icon="text" label={t('reader.display')} palette={palette} onPress={onDisplay} />
-          <Action
-            icon={listening ? 'pause' : 'headset-outline'}
-            label={listening ? t('reader.pause') : t('reader.listen')}
-            palette={palette}
-            onPress={onListen}
-          />
+          {hasSession ? null : (
+            <Action
+              icon="headset-outline"
+              label={t('reader.listen')}
+              palette={palette}
+              onPress={onListen}
+            />
+          )}
           <Action
             icon="chevron-forward"
             label={t('reader.next')}
@@ -239,6 +317,38 @@ const styles = StyleSheet.create({
   progressRow: { paddingHorizontal: 16, paddingTop: 10 },
   track: { height: 2, overflow: 'hidden' },
   fill: { height: 2 },
+  transport: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+  },
+  transportButton: {
+    alignItems: 'center',
+    gap: 2,
+    justifyContent: 'center',
+    minHeight: 48,
+    minWidth: 52,
+  },
+  transportLabel: { fontSize: 10, fontWeight: '500' },
+  transportPlay: {
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 52,
+    justifyContent: 'center',
+    width: 52,
+  },
+  transportSpeed: {
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    minHeight: 36,
+    minWidth: 56,
+    paddingHorizontal: 10,
+  },
+  transportSpeedLabel: { fontSize: 13, fontWeight: '600' },
   actions: {
     flexDirection: 'row',
     paddingHorizontal: 4,

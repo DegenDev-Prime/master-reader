@@ -1,4 +1,5 @@
 import type { ChapterBlock } from '@/sources/content/parse';
+import { stripDividerLines } from '@/utils/speech-text';
 
 export type ChapterText = {
   /** Text-bearing blocks joined with a blank line, matching narration text. */
@@ -21,12 +22,10 @@ export function chapterText(blocks: readonly ChapterBlock[]): ChapterText {
 
   let cursor = 0;
   blocks.forEach((block, index) => {
+    // Divider blocks ("***", "——") are decoration, not prose: dropping them
+    // here keeps the voice and the reader on the same text.
     const text =
-      block.kind === 'pre'
-        ? block.text
-        : block.kind === 'image' || block.kind === 'divider'
-          ? ''
-          : block.text;
+      block.kind === 'image' || block.kind === 'divider' ? '' : stripDividerLines(block.text);
     if (!text.trim()) return;
     if (parts.length > 0) cursor += 2;
     parts.push(text);

@@ -59,6 +59,9 @@ export default function AudioScreen() {
   const sleep = useNarrationStore((state) => state.sleep);
   const seriesPosition = useNarrationStore((state) => state.seriesPosition);
   const seriesLength = useNarrationStore((state) => state.seriesLength);
+  const chapterTotal = useNarrationStore((state) => state.chapterTotal);
+  const playNextChapter = useNarrationStore((state) => state.playNextChapter);
+  const playPrevChapter = useNarrationStore((state) => state.playPrevChapter);
   const playPrevInQueue = useNarrationStore((state) => state.playPrevInQueue);
   const playNextInQueue = useNarrationStore((state) => state.playNextInQueue);
   const skip = useNarrationStore((state) => state.skip);
@@ -129,11 +132,12 @@ export default function AudioScreen() {
 
   // The queue is the narration window itself: the chapters that follow the
   // one being read.
-  const currentChapterId = useMemo(() => {
-    const chunk = narrationChunks()[chunkIndex];
-    if (!chunk) return null;
-    return chapterWindow.find((chapter) => chapter.position === chunk.pageIndex)?.id ?? null;
-  }, [chunkIndex, chapterWindow]);
+  // Read on every render: the chunk array is not state, so a memo would keep
+  // the empty answer from the render before the chunks arrived.
+  const currentChunk = narrationChunks()[chunkIndex];
+  const currentChapterId = currentChunk
+    ? (chapterWindow.find((chapter) => chapter.position === currentChunk.pageIndex)?.id ?? null)
+    : null;
 
   useFocusEffect(
     useCallback(() => {
@@ -218,6 +222,26 @@ export default function AudioScreen() {
     seriesLength,
     chunkIndex,
   );
+
+  // Chapter-based stories have no series: the chapter window and the story's
+  // own chapter count decide whether the transport can move.
+  const currentWindowIndex = useMemo(
+    () => chapterWindow.findIndex((chapter) => chapter.id === currentChapterId),
+    [chapterWindow, currentChapterId],
+  );
+  const chapterMode = chapterTotal > 0;
+  // stepChapter reaches past the loaded window, so the story's own numbering
+  // decides rather than the window's.
+  const chapterPosition =
+    currentWindowIndex >= 0 ? (chapterWindow[currentWindowIndex]?.position ?? null) : null;
+  const canPrev = chapterMode
+    ? chapterPosition != null
+      ? chapterPosition > 0
+      : chunkIndex > 0
+    : canPrevChapter;
+  const canNext = chapterMode
+    ? chapterPosition != null && chapterPosition < chapterTotal - 1
+    : canNextChapter;
 
   const onPlayPress = useCallback(() => {
     if (!sourceId || !storyId) return;
@@ -313,11 +337,11 @@ export default function AudioScreen() {
                 playing={status === 'playing'}
                 loading={status === 'loading'}
                 canSeek={hasSession}
-                canPreviousChapter={canPrevChapter}
-                canNextChapter={canNextChapter}
+                canPreviousChapter={canPrev}
+                canNextChapter={canNext}
                 onPressPlay={onPlayPress}
-                onPreviousChapter={() => void playPrevInQueue()}
-                onNextChapter={() => void playNextInQueue()}
+                onPreviousChapter={() => void (chapterMode ? playPrevChapter() : playPrevInQueue())}
+                onNextChapter={() => void (chapterMode ? playNextChapter() : playNextInQueue())}
                 onRewind={() => void skip(-narrationSettings.skipSeconds)}
                 onForward={() => void skip(narrationSettings.skipSeconds)}
                 skipLabel={t('narration.skipSeconds', { count: narrationSettings.skipSeconds })}

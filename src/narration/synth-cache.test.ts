@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { cacheFileName, selectEvictions, synthCacheKeyInput, type CacheIndex } from './synth-cache';
+import {
+  cacheFileName,
+  orphanNames,
+  reconcileIndex,
+  selectEvictions,
+  synthCacheKeyInput,
+  type CacheIndex,
+} from './synth-cache';
 
 describe('synthCacheKeyInput', () => {
   it('is stable and separates engine, voice and text', () => {
@@ -35,5 +42,29 @@ describe('selectEvictions', () => {
 
   it('handles an empty index', () => {
     expect(selectEvictions({}, 10, 100)).toEqual([]);
+  });
+});
+
+describe('reconcileIndex', () => {
+  const index: CacheIndex = {
+    a: { bytes: 10, accessedAt: 1 },
+    b: { bytes: 20, accessedAt: 2 },
+  };
+
+  it('drops entries whose file was cleared', () => {
+    expect(reconcileIndex(index, new Set(['b.wav']))).toEqual({
+      b: { bytes: 20, accessedAt: 2 },
+    });
+  });
+
+  it('keeps everything when every file is there', () => {
+    expect(reconcileIndex(index, new Set(['a.wav', 'b.wav']))).toEqual(index);
+  });
+});
+
+describe('orphanNames', () => {
+  it('finds cache files the index does not know, ignoring its own file', () => {
+    const index: CacheIndex = { a: { bytes: 10, accessedAt: 1 } };
+    expect(orphanNames(index, ['a.wav', 'tmp-b.wav', 'index.json'])).toEqual(['tmp-b.wav']);
   });
 });

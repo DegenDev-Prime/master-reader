@@ -37,6 +37,8 @@ type Props = {
   followHighlight: boolean;
   onProgress: (progress: Progress) => void;
   onBlockPress: (blockIndex: number) => void;
+  /** Long press on a block: start the voice from that paragraph. */
+  onBlockLongPress?: (blockIndex: number) => void;
   onNext: () => void;
   onBackToChapters: () => void;
   onMarkRead: () => void;
@@ -55,6 +57,7 @@ export const ChapterBody = memo(function ChapterBody({
   followHighlight,
   onProgress,
   onBlockPress,
+  onBlockLongPress,
   onNext,
   onBackToChapters,
   onMarkRead,
@@ -206,6 +209,7 @@ export const ChapterBody = memo(function ChapterBody({
               <Pressable
                 key={index}
                 onPress={() => onBlockPress(index)}
+                onLongPress={onBlockLongPress ? () => onBlockLongPress(index) : undefined}
                 onLayout={(event) => onBlockLayout(index, event)}
                 style={styles.imageWrap}
               >
@@ -228,6 +232,7 @@ export const ChapterBody = memo(function ChapterBody({
                 accessibilityRole="header"
                 onLayout={(event) => onBlockLayout(index, event)}
                 onPress={onBlockPress ? () => onBlockPress(index) : undefined}
+                onLongPress={onBlockLongPress ? () => onBlockLongPress(index) : undefined}
                 style={[
                   paragraphStyle,
                   styles.heading,
@@ -251,6 +256,7 @@ export const ChapterBody = memo(function ChapterBody({
                 selectable
                 onLayout={(event) => onBlockLayout(index, event)}
                 onPress={onBlockPress ? () => onBlockPress(index) : undefined}
+                onLongPress={onBlockLongPress ? () => onBlockLongPress(index) : undefined}
                 style={[
                   paragraphStyle,
                   styles.pre,
@@ -282,6 +288,7 @@ export const ChapterBody = memo(function ChapterBody({
                 <Text
                   selectable
                   onPress={onBlockPress ? () => onBlockPress(index) : undefined}
+                  onLongPress={onBlockLongPress ? () => onBlockLongPress(index) : undefined}
                   style={[paragraphStyle, styles.listText]}
                 >
                   {renderSpans(block.spans, palette, fontFamily, fontSize, lineHeight)}
@@ -304,6 +311,7 @@ export const ChapterBody = memo(function ChapterBody({
                 <Text
                   selectable
                   onPress={onBlockPress ? () => onBlockPress(index) : undefined}
+                  onLongPress={onBlockLongPress ? () => onBlockLongPress(index) : undefined}
                   style={[
                     paragraphStyle,
                     styles.quoteText,
@@ -322,6 +330,7 @@ export const ChapterBody = memo(function ChapterBody({
               selectable
               onLayout={(event) => onBlockLayout(index, event)}
               onPress={onBlockPress ? () => onBlockPress(index) : undefined}
+              onLongPress={onBlockLongPress ? () => onBlockLongPress(index) : undefined}
               style={[paragraphStyle, highlighted && { backgroundColor: background }]}
             >
               {renderSpans(block.spans, palette, fontFamily, fontSize, lineHeight)}

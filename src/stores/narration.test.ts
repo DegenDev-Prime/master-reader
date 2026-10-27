@@ -495,3 +495,37 @@ describe('series chapter availability', () => {
     await vi.waitFor(() => expect(store.getState().status).toBe('playing'));
   });
 });
+
+describe('skip responsiveness', () => {
+  it('moves the player at once and restarts the engine once for a burst of taps', async () => {
+    await startNarration();
+    vi.useFakeTimers();
+    try {
+      const speaks = mocks.systemEngine.speak.mock.calls.length;
+
+      await store.getState().seekChunk(1);
+      await store.getState().seekChunk(1);
+
+      // The part on screen moves on the tap, before the engine is touched.
+      expect(store.getState().chunkIndex).toBe(1);
+      expect(mocks.systemEngine.speak.mock.calls.length).toBe(speaks);
+
+      await vi.advanceTimersByTimeAsync(300);
+      expect(mocks.systemEngine.speak.mock.calls.length).toBe(speaks + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not start speaking when the session is paused', async () => {
+    await startNarration();
+    await store.getState().pause();
+    const speaks = mocks.systemEngine.speak.mock.calls.length;
+
+    await store.getState().seekChunk(1);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(store.getState().chunkIndex).toBe(1);
+    expect(mocks.systemEngine.speak.mock.calls.length).toBe(speaks);
+  });
+});

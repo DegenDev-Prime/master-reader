@@ -1,6 +1,8 @@
 import { load, type CheerioAPI } from 'cheerio';
 import type { AnyNode, Element } from 'domhandler';
 
+import { isDividerText } from '@/utils/speech-text';
+
 export type InlineSpan = {
   text: string;
   bold?: boolean;
@@ -116,9 +118,14 @@ function textBlock(api: CheerioAPI, node: AnyNode): TextBlock {
 
 function pushParagraph(blocks: ChapterBlock[], spans: InlineSpan[]) {
   const block = toTextBlock(spans);
-  if (block.text.trim()) {
-    blocks.push({ kind: 'paragraph', ...block });
+  if (!block.text.trim()) return;
+  // "***" and "◇◇◇" separate scenes; showing them as text looks like a typo
+  // and reading them out is noise.
+  if (isDividerText(block.text)) {
+    blocks.push({ kind: 'divider' });
+    return;
   }
+  blocks.push({ kind: 'paragraph', ...block });
 }
 
 function walk(api: CheerioAPI, node: AnyNode, blocks: ChapterBlock[]): void {

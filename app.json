@@ -2,7 +2,7 @@
   "expo": {
     "name": "Master Reader",
     "slug": "master-reader",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "master-reader",
@@ -17,7 +17,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "versionName": "0.2.1"
+      "versionName": "0.2.2"
     },
     "plugins": [
       "expo-router",

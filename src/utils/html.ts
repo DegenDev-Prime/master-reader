@@ -1,3 +1,5 @@
+import { stripDividerLines } from '@/utils/speech-text';
+
 const NAMED_ENTITIES: Record<string, string> = {
   amp: '&',
   lt: '<',
@@ -51,11 +53,12 @@ export function htmlToPlainText(html: string): string {
   text = text.replace(/<[^>]+>/g, '');
   text = decodeHtmlEntities(text);
 
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  return stripDividerLines(
+    text
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n'),
+  );
 }
 
 export function estimateWordCount(text: string): number {

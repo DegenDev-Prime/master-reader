@@ -169,12 +169,12 @@ export class NovelFireSource implements Source {
     if (!Number.isFinite(number)) return null;
 
     try {
-      let parsed = parseChapterContent(await this.client.getChapter(storyId, number));
+      let parsed = parseChapterContent(await this.client.getChapterContent(storyId, number));
       // Novel Fire intermittently serves a content-less shell when several
       // chapters are fetched together; one delayed retry recovers it.
       if (!parsed.content) {
         await delay(300);
-        parsed = parseChapterContent(await this.client.getChapter(storyId, number));
+        parsed = parseChapterContent(await this.client.getChapterContent(storyId, number));
       }
       return parsed.content || null;
     } catch (error) {

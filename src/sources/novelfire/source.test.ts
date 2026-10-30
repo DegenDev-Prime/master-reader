@@ -152,6 +152,50 @@ describe('NovelFireSource', () => {
     expect(content).toContain('frail-looking young man');
   });
 
+  it('follows the mirror interstitial to the mirror domain', async () => {
+    const interstitial =
+      '<html><head><title>Loading...</title></head><body>' +
+      '<script>window.location.href = "https:\\/\\/novelphoenix.com\\/novel\\/shadow-slave\\/chapter-1";</script>' +
+      '</body></html>';
+    let mirrorCalls = 0;
+    const fetchImpl: FetchLike = async (url) => {
+      if (url.includes('novelfire.net')) {
+        return new Response(interstitial, {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        });
+      }
+      if (url.includes('novelphoenix.com')) {
+        mirrorCalls += 1;
+        return new Response(chapter(), { status: 200, headers: { 'content-type': 'text/html' } });
+      }
+      return new Response('not found', { status: 404 });
+    };
+    const { source } = createSource(fetchImpl);
+
+    const content = await source.getChapterContent('shadow-slave', '1');
+    expect(mirrorCalls).toBe(1);
+    expect(content).toContain('frail-looking young man');
+  });
+
+  it('does not refetch a mirror mention inside a real chapter', async () => {
+    const mentionsMirror =
+      '<html><body><div id="content"><p>novelphoenix.com has nothing on this.</p></div></body></html>';
+    const fetchImpl: FetchLike = async (url) => {
+      if (url.includes('novelfire.net')) {
+        return new Response(mentionsMirror, {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        });
+      }
+      return new Response('not found', { status: 404 });
+    };
+    const { source } = createSource(fetchImpl);
+
+    const content = await source.getChapterContent('shadow-slave', '1');
+    expect(content).toContain('nothing on this');
+  });
+
   it('lists genres and reports no tags', async () => {
     const { source } = createSource();
     await expect(source.getTags()).resolves.toEqual([]);

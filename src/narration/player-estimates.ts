@@ -118,6 +118,28 @@ export function playerTiming(
   };
 }
 
+/**
+ * The part of `text` a voice starting `seconds` in has not spoken yet. Used to
+ * resume or skip inside a chunk, which the engines cannot seek to on their
+ * own: they restart a chunk, so the caller hands them the tail of its text.
+ * Lands on the word after a boundary so a half-spoken word is not read out.
+ */
+export function textFromSeconds(text: string, seconds: number, rate = 1): string {
+  const duration = estimateSeconds(text, rate);
+  if (seconds <= 0 || text.length === 0 || duration <= 0) return text;
+  let offset = Math.min(Math.floor((seconds / duration) * text.length), text.length - 1);
+  if (offset > 0) {
+    // Speak whole words: start after the space ahead of the boundary when
+    // there is one, otherwise after the one behind it, so an end-of-text
+    // offset still lands on the final word instead of its last letter.
+    const ahead = text.indexOf(' ', offset);
+    const behind = text.lastIndexOf(' ', offset);
+    offset = (ahead >= 0 ? ahead : behind) + 1;
+  }
+  if (offset >= text.length) offset = Math.max(0, text.length - 1);
+  return text.slice(offset);
+}
+
 /** `14:02` for a duration under an hour, `1:02:03` beyond it. */
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));

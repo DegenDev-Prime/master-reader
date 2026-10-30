@@ -6,7 +6,7 @@ import {
   progressRepository,
 } from '@/db/repositories';
 import { chapterRepository } from '@/db/repositories/chapters';
-import { chunkIndexAfterSeconds, Narrator } from '@/narration/service';
+import { Narrator, seekTargetAfterSeconds } from '@/narration/service';
 import { chunkPages, type SpeechChunk } from '@/narration/chunker';
 import { systemEngine } from '@/narration/engines/system';
 import { createNeuralEngine } from '@/narration/engines/neural';
@@ -93,7 +93,7 @@ type NarrationState = {
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   stop: () => Promise<void>;
-  seekChunk: (index: number, immediate?: boolean) => Promise<void>;
+  seekChunk: (index: number, immediate?: boolean, intoSeconds?: number) => Promise<void>;
   skip: (seconds: number) => Promise<void>;
   setSpeed: (speed: number) => Promise<void>;
   setVoice: (voiceId: string | null, engine?: NarrationEngineId) => Promise<void>;
@@ -169,9 +169,19 @@ let clockTimer: ReturnType<typeof setInterval> | null = null;
 const SEEK_DEBOUNCE_MS = 90;
 let seekTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingSeek: number | null = null;
+/** How far into the pending chunk the seek lands, in seconds. */
+let pendingSeekInto = 0;
 /** The session the pending seek belongs to, so it cannot outlive a new one. */
 let pendingSeekSession = 0;
 let seekRunning = false;
+/**
+ * How far into the chunk the voice started, in seconds, when it was entered
+ * mid-way by a skip or a resume. The engines cannot seek inside an utterance
+ * and get the chunk's unspoken text, so the clock has to add this head start.
+ */
+let chunkOffsetInto = 0;
+/** The chunk the head start belongs to; any other chunk resets it. */
+let offsetChunkIndex = -1;
 
 /**
  * Builds narration pages from chapter-based sources. Starts at the reader's
@@ -385,7 +395,7 @@ function ensureNarrator(): Narrator {
             if (speakingIndex >= 0) {
               chunkDurations[speakingIndex] = Math.max(0, now - previous);
             }
-            pausedPosition = (now - previous) / 1000;
+            pausedPosition = (now - previous) / 1000 + chunkOffsetInto;
           }
           useNarrationStore.setState({ status, chunkStartedAt: now, now });
           if (status === 'playing') startClock();
@@ -397,6 +407,9 @@ function ensureNarrator(): Narrator {
           if (previous > 0 && speakingIndex >= 0) {
             chunkDurations[speakingIndex] = Math.max(0, now - previous);
           }
+          // The head start covers only the chunk it was entered with; once the
+          // voice moves on, the plain chunk clock is the position again.
+          if (index !== offsetChunkIndex) chunkOffsetInto = 0;
           speakingIndex = index;
           useNarrationStore.setState({
             chunkIndex: index,
@@ -464,10 +477,19 @@ async function drainSeek(): Promise<void> {
   seekRunning = true;
   try {
     const narration = useSettingsStore.getState().settings.narration;
-    await ensureNarrator().pause();
+    const into = pendingSeekInto;
+    pendingSeekInto = 0;
+    chunkOffsetInto = into;
+    offsetChunkIndex = index;
+    try {
+      await ensureNarrator().pause();
+    } catch {
+      // An engine that cannot be stopped lets the new run replace it anyway.
+    }
     ensureNarrator().play({
       chunks,
       startIndex: index,
+      startOffsetSeconds: into,
       voiceId: narration.voiceId,
       rate: useNarrationStore.getState().speed,
     });
@@ -631,6 +653,9 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       seekTimer = null;
     }
     pendingSeek = null;
+    pendingSeekInto = 0;
+    chunkOffsetInto = 0;
+    offsetChunkIndex = -1;
     narrationSession += 1;
     const session = narrationSession;
     seriesItems = [];
@@ -794,11 +819,28 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     const { sourceId, storyId, chunkIndex, speed } = get();
     if (!sourceId || !storyId || chunks.length === 0) return;
     try {
-      const { autoRewindSeconds } = useSettingsStore.getState().settings.narration;
-      const narration = useSettingsStore.getState().settings.narration;
-      const startIndex = chunkIndexAfterSeconds(chunks, chunkIndex, -autoRewindSeconds, speed);
-      await ensureNarrator().pause();
-      ensureNarrator().play({ chunks, startIndex, voiceId: narration.voiceId, rate: speed });
+      const { autoRewindSeconds, voiceId } = useSettingsStore.getState().settings.narration;
+      const target = seekTargetAfterSeconds(
+        chunks,
+        chunkIndex,
+        -autoRewindSeconds,
+        speed,
+        get().positionAt(Date.now()),
+      );
+      try {
+        await ensureNarrator().pause();
+      } catch {
+        // An engine that cannot be stopped lets the new run replace it anyway.
+      }
+      chunkOffsetInto = target.intoSeconds;
+      offsetChunkIndex = target.index;
+      ensureNarrator().play({
+        chunks,
+        startIndex: target.index,
+        startOffsetSeconds: target.intoSeconds,
+        voiceId,
+        rate: speed,
+      });
     } catch (error) {
       set({ status: 'error', error: error instanceof Error ? error.message : String(error) });
     }
@@ -812,6 +854,9 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       seekTimer = null;
     }
     pendingSeek = null;
+    pendingSeekInto = 0;
+    chunkOffsetInto = 0;
+    offsetChunkIndex = -1;
     // The background chapter loader stops with the session.
     narrationSession += 1;
     try {
@@ -852,20 +897,25 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     narrationPageMaps = new Map();
   },
 
-  async seekChunk(index, immediate = false) {
+  async seekChunk(index, immediate = false, intoSeconds = 0) {
     const { sourceId, storyId } = get();
     if (!sourceId || !storyId || chunks.length === 0) return;
     const target = Math.min(Math.max(0, Math.round(index)), chunks.length - 1);
     // The player moves on the tap; the engine restart is debounced behind it,
     // so a burst of skips feels instant instead of queueing stop/start pairs.
     pendingSeek = target;
+    pendingSeekInto = Math.max(0, intoSeconds);
     pendingSeekSession = narrationSession;
-    pausedPosition = 0;
+    pausedPosition = pendingSeekInto;
+    chunkOffsetInto = pendingSeekInto;
+    offsetChunkIndex = target;
     set({
       chunkIndex: target,
       chunkId: chunks[target]?.id ?? null,
       chunkText: chunks[target]?.text ?? null,
-      chunkStartedAt: Date.now(),
+      // The clock starts as if the chunk began intoSeconds ago, so the shown
+      // position lands where the seek asked for, not at the chunk's start.
+      chunkStartedAt: Date.now() - pendingSeekInto * 1000,
       now: Date.now(),
     });
     // While paused the engine is already stopped: the position is enough, and
@@ -894,7 +944,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       total += known - (offsets[index + 1] - offsets[index]) * 1000;
     }
     if (status === 'playing' && chunkStartedAt > 0) {
-      total += Math.max(0, now - chunkStartedAt);
+      total += Math.max(0, now - chunkStartedAt) + chunkOffsetInto;
     }
     return total;
   },
@@ -904,7 +954,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     const { chunkStartedAt, status } = get();
     if (chunkStartedAt <= 0) return 0;
     if (status !== 'playing') return pausedPosition;
-    return Math.max(0, (now - chunkStartedAt) / 1000);
+    return Math.max(0, (now - chunkStartedAt) / 1000 + chunkOffsetInto);
   },
 
   async skip(seconds) {
@@ -913,8 +963,14 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     // The voice's place inside the chunk comes from the same clock the player
     // shows, so a skip of a few seconds really moves that far and a rewind
     // after a pause is not counted from the pause.
-    const intoChunk = get().positionAt(Date.now());
-    await get().seekChunk(chunkIndexAfterSeconds(chunks, chunkIndex, seconds, speed, intoChunk));
+    const target = seekTargetAfterSeconds(
+      chunks,
+      chunkIndex,
+      seconds,
+      speed,
+      get().positionAt(Date.now()),
+    );
+    await get().seekChunk(target.index, false, target.intoSeconds);
   },
 
   /**

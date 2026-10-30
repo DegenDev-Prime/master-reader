@@ -529,3 +529,61 @@ describe('skip responsiveness', () => {
     expect(mocks.systemEngine.speak.mock.calls.length).toBe(speaks);
   });
 });
+
+describe('resume and skip inside a chunk', () => {
+  /** 30 words take 12 seconds at the player's estimate. */
+  const words = Array.from({ length: 30 }, (_, i) => `word${i}`).join(' ');
+
+  async function startLongSession(): Promise<void> {
+    mocks.getStoryPages.mockResolvedValue([
+      { index: 0, content: words },
+      { index: 1, content: `${words} again` },
+    ]);
+    mocks.getStoryDetails.mockResolvedValue({ title: 'Title one', series: null });
+    void store.getState().play('src', 'one', 'Title one');
+    await vi.waitFor(() => expect(store.getState().status).toBe('playing'));
+  }
+
+  it('resumes the unspoken tail instead of restarting the chunk', async () => {
+    await startLongSession();
+    // The voice is six seconds into the twelve-second chunk.
+    store.setState({ chunkStartedAt: Date.now() - 6000 });
+
+    await store.getState().pause();
+    expect(store.getState().positionAt(Date.now())).toBeGreaterThan(5);
+
+    // The three second rewind keeps the resume inside the chunk: the tail is
+    // spoken instead of the chunk restarting from its first word.
+    await store.getState().resume();
+    await vi.waitFor(() => expect(mocks.systemEngine.speak.mock.calls.length).toBe(2));
+    const request = (
+      (mocks.systemEngine.speak.mock.calls[1] ?? null) as unknown as
+        [{ chunk: { text: string } }] | null
+    )?.[0];
+    expect(request).not.toBeNull();
+    expect(request?.chunk.text.length).toBeLessThan(words.length);
+    expect(words.endsWith(request?.chunk.text ?? '')).toBe(true);
+    const position = store.getState().positionAt(Date.now());
+    expect(position).toBeGreaterThanOrEqual(2.5);
+    expect(position).toBeLessThan(6);
+  });
+
+  it('skips across the chunk with the time still left inside it', async () => {
+    await startLongSession();
+    store.setState({ chunkStartedAt: Date.now() - 6000 });
+
+    await store.getState().skip(15);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    await vi.waitFor(() => expect(mocks.systemEngine.speak.mock.calls.length).toBe(2));
+    const request = (
+      (mocks.systemEngine.speak.mock.calls[1] ?? null) as unknown as
+        [{ chunk: { id: string; text: string } }] | null
+    )?.[0];
+    expect(request).not.toBeNull();
+    // 6s + 15s reaches 21s, nine seconds into the second page's chunk.
+    expect(request?.chunk.id).toBe('1:0');
+    expect(request?.chunk.text.length).toBeLessThan(`${words} again`.length);
+    expect(`${words} again`.endsWith(request?.chunk.text ?? '')).toBe(true);
+  });
+});

@@ -1,5 +1,5 @@
 import { NarrationStoppedError, type NarratorEngine } from './engine';
-import { chunkOffsets, estimateSeconds } from './player-estimates';
+import { chunkOffsets, estimateSeconds, textFromSeconds } from './player-estimates';
 import type { SpeechChunk } from './chunker';
 import { isSleepTimerExpired, type SleepTimerState } from './sleep-timer';
 import type { NarrationStatus } from './types';
@@ -7,6 +7,11 @@ import type { NarrationStatus } from './types';
 export type PlayOptions = {
   chunks: SpeechChunk[];
   startIndex?: number;
+  /**
+   * How far into the start chunk the voice already is. The engine never seeks
+   * within an utterance, so the first chunk is handed its unspoken tail.
+   */
+  startOffsetSeconds?: number;
   voiceId?: string | null;
   language?: string;
   rate: number;
@@ -133,8 +138,17 @@ export class Narrator {
     chunks: SpeechChunk[],
     start: number,
   ): Promise<void> {
+    // The engine has no way to seek into an utterance, so a start that is part
+    // way through a chunk is given the chunk's unspoken tail instead.
+    const startText =
+      options.startOffsetSeconds != null && options.startOffsetSeconds > 0 && chunks.length > 0
+        ? textFromSeconds(chunks[start].text, options.startOffsetSeconds, options.rate)
+        : null;
     const request = (index: number) => ({
-      chunk: chunks[index],
+      chunk:
+        index === start && startText !== null
+          ? { ...chunks[index], text: startText }
+          : chunks[index],
       voiceId: options.voiceId,
       language: options.language,
       rate: this.deps.getRate(),
@@ -233,18 +247,22 @@ function clampIndex(index: number, length: number): number {
 }
 
 /**
- * Maps a seconds-based skip onto a chunk index. `intoChunk` is how far into the
- * current chunk the voice is, when that is known. A skip that reaches past the
- * current chunk lands on the next one, and a rewind lands on the previous one.
+ * Maps a seconds-based skip onto a chunk index plus how far into that chunk
+ * the target time lands, so the caller can start the engine mid-chunk.
+ * `intoChunk` is how far into the current chunk the voice is, when that is
+ * known. A skip that reaches past the current chunk lands on the next one,
+ * and a rewind lands on the previous one.
  */
-export function chunkIndexAfterSeconds(
+export type SeekTarget = { index: number; intoSeconds: number };
+
+export function seekTargetAfterSeconds(
   chunks: SpeechChunk[],
   fromIndex: number,
   seconds: number,
   rate: number,
   intoChunk = 0,
-): number {
-  if (chunks.length === 0) return 0;
+): SeekTarget {
+  if (chunks.length === 0) return { index: 0, intoSeconds: 0 };
   const index = clampIndex(fromIndex, chunks.length);
   const offsets = chunkOffsets(chunks, rate);
   const duration = estimateSeconds(chunks[index].text, rate);
@@ -254,14 +272,32 @@ export function chunkIndexAfterSeconds(
   const into = intoChunk > 0 ? Math.min(intoChunk, duration) : duration / 2;
   // Without a known position the chunk is taken to be half spoken, which is
   // the same assumption the player's time display makes.
-  const current = offsets[index] + into;
-  const target = current + seconds;
+  const target = offsets[index] + into + seconds;
 
-  if (target <= 0) return 0;
+  if (target <= 0) return { index: 0, intoSeconds: 0 };
   const last = chunks.length - 1;
-  if (target >= offsets[last] + estimateSeconds(chunks[last].text, rate)) return last;
+  const lastDuration = estimateSeconds(chunks[last].text, rate);
+  if (target >= offsets[last] + lastDuration) return { index: last, intoSeconds: lastDuration };
   for (let position = last; position >= 0; position -= 1) {
-    if (target >= offsets[position]) return position;
+    if (target >= offsets[position]) {
+      return {
+        index: position,
+        intoSeconds: Math.max(
+          0,
+          Math.min(target - offsets[position], estimateSeconds(chunks[position].text, rate)),
+        ),
+      };
+    }
   }
-  return 0;
+  return { index: 0, intoSeconds: Math.max(0, target) };
+}
+
+export function chunkIndexAfterSeconds(
+  chunks: SpeechChunk[],
+  fromIndex: number,
+  seconds: number,
+  rate: number,
+  intoChunk = 0,
+): number {
+  return seekTargetAfterSeconds(chunks, fromIndex, seconds, rate, intoChunk).index;
 }

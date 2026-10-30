@@ -6,6 +6,7 @@ import {
   formatChapterLength,
   formatDuration,
   playerTiming,
+  textFromSeconds,
 } from './player-estimates';
 
 describe('estimateDurationMs', () => {
@@ -131,5 +132,37 @@ describe('formatChapterLength', () => {
   it('returns null without a word count', () => {
     expect(formatChapterLength(null)).toBeNull();
     expect(formatChapterLength(0)).toBeNull();
+  });
+});
+
+describe('textFromSeconds', () => {
+  const text = 'one two three four five six seven eight nine ten';
+
+  it('returns the whole text for a zero offset', () => {
+    expect(textFromSeconds(text, 0, 1)).toBe(text);
+    expect(textFromSeconds(text, -2, 1)).toBe(text);
+  });
+
+  it('cuts part way through at a word boundary', () => {
+    // 150 words a minute at speed 1, so the ten words take four seconds and a
+    // two second offset is half way; the tail starts at the next word.
+    const tail = textFromSeconds(text, 2, 1);
+    expect(tail).toBe('seven eight nine ten');
+  });
+
+  it('counts faster speech in', () => {
+    // At speed 2 the text takes two seconds, so a five second offset is past
+    // its end and lands on the final word.
+    const tail = textFromSeconds(text, 5, 2);
+    expect(tail).toBe('ten');
+  });
+
+  it('never returns an empty tail from an over-long offset', () => {
+    expect(textFromSeconds(text, 600, 1)).toBe('ten');
+    expect(textFromSeconds('', 3, 1)).toBe('');
+  });
+
+  it('returns the whole text for a single word it cannot split', () => {
+    expect(textFromSeconds('word', 1, 1)).toBe('word');
   });
 });

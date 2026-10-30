@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { chunkIndexAfterSeconds, Narrator } from './service';
+import { chunkIndexAfterSeconds, Narrator, seekTargetAfterSeconds } from './service';
 import type { NarratorEngine } from './engine';
 import type { SpeechChunk } from './chunker';
 import type { SleepTimerState } from './sleep-timer';
@@ -297,5 +297,79 @@ describe('chunkIndexAfterSeconds', () => {
   it('is a no-op for zero seconds', () => {
     const chunks = makeChunks(4);
     expect(chunkIndexAfterSeconds(chunks, 1, 0, 1)).toBe(1);
+  });
+});
+
+describe('seekTargetAfterSeconds', () => {
+  it('reports the time into the target chunk', () => {
+    // Each chunk is two seconds long; chunk 3 starts at six seconds.
+    const chunks = makeChunks(5);
+    const target = seekTargetAfterSeconds(chunks, 3, 0, 1, 0.5);
+    expect(target).toEqual({ index: 3, intoSeconds: 0.5 });
+  });
+
+  it('crosses chunk borders with the in-chunk remainder', () => {
+    const chunks = makeChunks(5);
+    // From half a second into chunk 3, a one second skip stays inside the
+    // two-second chunk, one and a half seconds in.
+    expect(seekTargetAfterSeconds(chunks, 3, 1, 1, 0.5)).toEqual({ index: 3, intoSeconds: 1.5 });
+    // A two second skip crosses into chunk 4, keeping the half second spare.
+    expect(seekTargetAfterSeconds(chunks, 3, 2, 1, 0.5)).toEqual({ index: 4, intoSeconds: 0.5 });
+    // A one and a half second rewind from chunk 4 lands mid-chunk 3.
+    expect(seekTargetAfterSeconds(chunks, 4, -1.5, 1, 0.5)).toEqual({
+      index: 3,
+      intoSeconds: 1,
+    });
+  });
+
+  it('returns zero seconds when the target reaches the bounds', () => {
+    const chunks = makeChunks(3);
+    expect(seekTargetAfterSeconds(chunks, 0, -60, 1)).toEqual({ index: 0, intoSeconds: 0 });
+    // Past the end the last chunk counts as fully spoken.
+    const last = seekTargetAfterSeconds(chunks, 2, 600, 1);
+    expect(last.index).toBe(2);
+    expect(last.intoSeconds).toBeGreaterThan(0);
+  });
+});
+
+describe('startOffsetSeconds', () => {
+  it('speaks the unspoken tail of the start chunk only', async () => {
+    const spoken: { id: string; text: string }[] = [];
+    const engine: NarratorEngine = {
+      ...fakeEngine([]),
+      speak: async ({ chunk }) => {
+        spoken.push({ id: chunk.id, text: chunk.text });
+      },
+    };
+    const chunks = makeChunks(3);
+    const narrator = new Narrator(deps(engine));
+    narrator.play({
+      chunks,
+      startIndex: 1,
+      startOffsetSeconds: 1,
+      rate: 1,
+    });
+    await narrator.finished;
+    // The tail is shorter and starts on a word boundary; later chunks are
+    // spoken whole.
+    expect(spoken[0]?.id).toBe('0:1');
+    expect(spoken[0].text.length).toBeLessThan(chunks[1].text.length);
+    expect(chunks[1].text.endsWith(spoken[0].text)).toBe(true);
+    expect(spoken[1]?.text).toBe(chunks[2].text);
+  });
+
+  it('ignores the offset when it is zero', async () => {
+    const spoken: string[] = [];
+    const narrator = new Narrator(
+      deps({
+        ...fakeEngine(spoken),
+        speak: async ({ chunk }) => {
+          spoken.push(chunk.id);
+        },
+      }),
+    );
+    narrator.play({ chunks: makeChunks(2), startOffsetSeconds: 0, rate: 1 });
+    await narrator.finished;
+    expect(spoken).toEqual(['0:0', '0:1']);
   });
 });

@@ -12,11 +12,15 @@ export function cacheFileName(key: string): string {
   return `${key}.wav`;
 }
 
-/** Pure LRU selection: keys to delete so `incomingBytes` fits under `capBytes`. */
+/**
+ * Pure LRU selection: keys to delete so `incomingBytes` fits under `capBytes`.
+ * Protected keys (the playhead and its lookahead) are never evicted.
+ */
 export function selectEvictions(
   index: CacheIndex,
   incomingBytes: number,
   capBytes: number,
+  protectedKeys: ReadonlySet<string> = new Set(),
 ): string[] {
   const entries = Object.entries(index).sort((a, b) => a[1].accessedAt - b[1].accessedAt);
   const total = entries.reduce((sum, [, entry]) => sum + entry.bytes, 0);
@@ -24,6 +28,7 @@ export function selectEvictions(
   const evict: string[] = [];
   for (const [key, entry] of entries) {
     if (total - freed + incomingBytes <= capBytes) break;
+    if (protectedKeys.has(key)) continue;
     freed += entry.bytes;
     evict.push(key);
   }

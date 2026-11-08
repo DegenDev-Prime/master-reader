@@ -1,0 +1,25 @@
+{
+  "meta": { "pages_count": 1 },
+  "submission": {
+    "id": 201,
+    "title": "Neon &amp; Rain",
+    "description": "A cyberpunk romance",
+    "category_info": { "name": "Sci-Fi &amp; Fantasy" },
+    "category": 7,
+    "language": 1,
+    "date_approve": "01/02/2021",
+    "rate_all": 4.2,
+    "view_count": 500,
+    "url": "neon-rain",
+    "is_hot": true,
+    "is_new": false,
+    "writers_pick": false,
+    "contest_winner": false,
+    "enable_comments": true,
+    "allow_vote": true,
+    "words_count": 2400,
+    "series": [],
+    "author": { "id": 902, "username": "Casey" }
+  },
+  "pageText": "The rain never stopped in the neon district."
+}

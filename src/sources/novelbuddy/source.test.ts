@@ -75,12 +75,48 @@ describe('NovelBuddySource', () => {
     expect(result.hasNext).toBe(false);
   });
 
+  it('does not walk past the home snapshot', async () => {
+    const { source, calls } = createSource(() => jsonResponse({}));
+
+    const latest = await source.getLatest({ page: 2 });
+    const popular = await source.getPopular({ page: 2 });
+
+    expect(latest).toEqual({ items: [], page: 2, hasNext: false, total: 0 });
+    expect(popular).toEqual({ items: [], page: 2, hasNext: false, total: 0 });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('stops popular pagination after its single block', async () => {
+    const { source } = createSource(() =>
+      jsonResponse({
+        success: true,
+        data: { latest: { items: [], pagination: {} }, popular: [LIST_ITEM], trending: [] },
+      }),
+    );
+
+    const result = await source.getPopular();
+    expect(result.items).toHaveLength(1);
+    expect(result.hasNext).toBe(false);
+  });
+
   it('unwraps the API envelope for the title', async () => {
     const { source } = createSource(() => jsonResponse({ success: true, data: { title: TITLE } }));
 
     const story = await source.getStory('VYPGVZ8z', { includeContent: false });
     expect(story?.title).toBe('Shadow Slave');
     expect(story?.authorName).toBe('Guiltythree');
+  });
+
+  it('returns metadata without fabricating chapter stubs', async () => {
+    const { source, calls } = createSource((url) => {
+      if (url.includes('/chapters')) throw new Error(`unexpected chapter request: ${url}`);
+      return jsonResponse({ success: true, data: { title: TITLE } });
+    });
+
+    const story = await source.getStory('VYPGVZ8z');
+
+    expect(story?.pages).toBeUndefined();
+    expect(calls).toEqual(['https://api.novelbuddy.me/titles/VYPGVZ8z']);
   });
 
   it('unwraps the API envelope for the chapter list', async () => {
@@ -129,6 +165,7 @@ describe('NovelBuddySource', () => {
 
     const result = await source.search({ query: 'shadow' });
     expect(result.items).toHaveLength(1);
-    expect(calls[0]).toContain('query=shadow');
+    expect(calls[0]).toContain('q=shadow');
+    expect(calls[0]).not.toContain('query=shadow');
   });
 });

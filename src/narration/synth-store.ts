@@ -27,6 +27,23 @@ function indexFile(): File {
  * hits are now memory-only; only a store touches the disk.
  */
 let cacheIndex: CacheIndex | null = null;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let protectedUris = new Set<string>();
+let sessionActive = false;
+
+/** Keeps the playhead and its lookahead out of the LRU eviction sweep. */
+export function setSynthProtectedUris(uris: readonly string[]): void {
+  protectedUris = new Set(uris);
+}
+
+/** A live narration session owns its cached WAVs; clearing would break it. */
+export function setSynthSessionActive(active: boolean): void {
+  sessionActive = active;
+}
+
+export function isSynthSessionActive(): boolean {
+  return sessionActive;
+}
 
 function readIndexFile(): CacheIndex {
   const file = indexFile();
@@ -67,6 +84,23 @@ function persistIndex(index: CacheIndex): void {
   temporary.moveSync(indexFile(), { overwrite: true });
 }
 
+function schedulePersist(): void {
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    if (cacheIndex) persistIndex(cacheIndex);
+  }, 500);
+}
+
+/** Flushes a pending index write, e.g. before the cache is cleared. */
+export function flushSynthCacheIndex(): void {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  if (cacheIndex) persistIndex(cacheIndex);
+}
+
 export async function synthCacheKey(
   engine: string,
   voiceId: string,
@@ -105,7 +139,10 @@ export async function synthCacheStore(key: string, sourceWav: File): Promise<str
   dir.create({ intermediates: true, idempotent: true });
   const index = loadIndex();
   const bytes = sourceWav.size;
-  for (const victim of selectEvictions(index, bytes, SYNTH_CACHE_CAP_BYTES)) {
+  const protectedKeys = new Set(
+    Object.keys(index).filter((item) => protectedUris.has(new File(dir, cacheFileName(item)).uri)),
+  );
+  for (const victim of selectEvictions(index, bytes, SYNTH_CACHE_CAP_BYTES, protectedKeys)) {
     const victimFile = new File(dir, cacheFileName(victim));
     if (victimFile.exists) victimFile.delete();
     delete index[victim];
@@ -114,7 +151,7 @@ export async function synthCacheStore(key: string, sourceWav: File): Promise<str
   // Same volume: a rename, not a second write of the whole WAV.
   await sourceWav.move(dest, { overwrite: true });
   index[key] = { bytes, accessedAt: Date.now() };
-  persistIndex(index);
+  schedulePersist();
   return dest.uri;
 }
 
@@ -124,6 +161,13 @@ export async function synthCacheBytes(): Promise<number> {
 }
 
 export async function clearSynthCache(): Promise<void> {
+  // Deleting the file under the current clip would wedge playback until the
+  // next synthesis. The settings screen can clear again after stopping.
+  if (sessionActive) return;
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
   const dir = cacheDir();
   if (dir.exists) dir.delete();
   cacheIndex = null;

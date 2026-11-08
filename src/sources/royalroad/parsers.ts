@@ -4,25 +4,20 @@ import {
   allMatches,
   cleanText,
   extractElementByClass,
-  extractElementById,
   firstMatch,
   getAttribute,
   stripTags,
 } from '@/utils/html-parse';
 
-import { ROYALROAD_BASE_URL, ROYALROAD_SOURCE_ID as SOURCE_ID } from './constants';
+import {
+  fictionIdFromHref,
+  fictionUrl,
+  hasNextPage,
+  ROYALROAD_BASE_URL,
+  ROYALROAD_SOURCE_ID as SOURCE_ID,
+} from './protocol';
 import { absoluteUrl, toNumberOrNull } from '../provider-utils';
 import type { StoryDetails } from '../types';
-
-export type RoyalRoadChapter = { number: number; path: string; title: string };
-/** Cloudflare serves an interstitial challenge page to non-browser clients. */
-export function isCloudflareChallenge(html: string): boolean {
-  return (
-    /<title>\s*Just a moment/i.test(html) ||
-    /cf-mitigated|challenges\.cloudflare\.com/i.test(html) ||
-    /id="challenge-(running|form)"/i.test(html)
-  );
-}
 
 function metaContent(html: string, key: 'name' | 'property', value: string): string | null {
   const tag = firstMatch(html, new RegExp(`<meta\\b[^>]*\\b${key}="${value}"[^>]*>`, 'i'));
@@ -48,8 +43,7 @@ export function parseListing(html: string, page: number): { stories: Story[]; ha
     if (story) stories.push(story);
   }
 
-  const nextPage = new RegExp(`[?&]page=${page + 1}(?:[&"'\\s]|$)`, 'i');
-  return { stories, hasNext: nextPage.test(html) };
+  return { stories, hasNext: hasNextPage(html, page) };
 }
 
 function parseListItem(chunk: string): Story | null {
@@ -59,7 +53,8 @@ function parseListItem(chunk: string): Story | null {
     );
   if (!full) return null;
 
-  const id = full[2];
+  const href = full[1];
+  const id = fictionIdFromHref(href);
   const title = stripTags(full[4]);
   if (!id || !title) return null;
 
@@ -76,7 +71,7 @@ function parseListItem(chunk: string): Story | null {
     // Cards no longer carry an author element; profile links inside a card's
     // description (cover artists, sponsorships) are not the author.
     authorName: parseAuthor(chunk),
-    url: `${ROYALROAD_BASE_URL}${full[1]}`,
+    url: absoluteUrl(ROYALROAD_BASE_URL, href),
     coverUrl: absoluteUrl(ROYALROAD_BASE_URL, coverSrc),
     description: description ? htmlToPlainText(description) : null,
     rating: parseRating(chunk),
@@ -137,7 +132,7 @@ export function parseFiction(id: string, html: string): StoryDetails {
     description: descriptionHtml
       ? htmlToPlainText(descriptionHtml)
       : metaContent(html, 'property', 'og:description'),
-    url: `${ROYALROAD_BASE_URL}/fiction/${id}`,
+    url: fictionUrl(id),
     coverUrl: absoluteUrl(ROYALROAD_BASE_URL, metaContent(html, 'property', 'og:image')),
     rating: toNumberOrNull(firstMatch(html, /"ratingValue"\s*:\s*"?([0-9.]+)/i)),
     votes: toNumberOrNull(firstMatch(html, /"ratingCount"\s*:\s*"?([0-9]+)/i)),
@@ -154,25 +149,6 @@ function parseTags(html: string): string[] {
   return allMatches(html, /href="\/fictions\/search\?tagsAdd=[^"]*"[^>]*>([^<]+)<\/a>/gi)
     .map((match) => cleanText(match[1]))
     .filter(Boolean);
-}
-
-export function parseChapterList(html: string, id: string): RoyalRoadChapter[] {
-  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const scope = extractElementById(html, 'chapters', 'table') ?? html;
-  const pattern = new RegExp(
-    `href="(/fiction/${escaped}/(?:[^"/]+/)?chapter/(\\d+)(?:/[^"]*)?)"[^>]*>([\\s\\S]*?)</a>`,
-    'gi',
-  );
-  const byNumber = new Map<number, RoyalRoadChapter>();
-  for (const match of allMatches(scope, pattern)) {
-    const number = Number(match[2]);
-    if (!Number.isFinite(number) || number <= 0) continue;
-    if (byNumber.has(number)) continue;
-    const title = stripTags(match[3]);
-    if (!title) continue;
-    byNumber.set(number, { number, path: match[1], title });
-  }
-  return [...byNumber.values()].sort((a, b) => a.number - b.number);
 }
 
 export function parseChapterContent(html: string): {

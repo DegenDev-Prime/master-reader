@@ -2,7 +2,6 @@ import type { Story, StoryPage } from '@/models/story';
 
 import { browserHtmlLoader } from '../browser-loader';
 import { normalizePage, toPagedResult } from '../provider-utils';
-import { NotFoundError, SourceError } from '../transport';
 import type {
   Category,
   ChapterRef,
@@ -17,18 +16,21 @@ import type {
 } from '../types';
 import { ROYALROAD_CATEGORIES } from './categories';
 import {
-  ROYALROAD_BASE_URL,
-  ROYALROAD_PATHS,
-  ROYALROAD_SOURCE_ID,
-  ROYALROAD_WEB_URL,
-} from './constants';
-import {
-  isCloudflareChallenge,
-  parseChapterContent,
+  chapterUrl,
+  fictionUrl,
+  listingUrl,
+  normalizeFictionId,
   parseChapterList,
-  parseFiction,
-  parseListing,
-} from './parsers';
+  readRoyalRoadHtml,
+  readRoyalRoadListing,
+  ROYALROAD_PAGE_SELECTOR,
+  ROYALROAD_SOURCE_ID,
+  ROYALROAD_USES_BROWSER,
+  ROYALROAD_WEB_URL,
+  searchUrl,
+  toChapterRefs,
+} from './protocol';
+import { parseChapterContent, parseFiction, parseListing } from './parsers';
 
 export type RoyalRoadSourceOptions = {
   /** Overrides the network layer; defaults to the in-app thin browser. */
@@ -49,7 +51,7 @@ export class RoyalRoadSource implements Source {
     capabilities: ['popular', 'latest', 'search', 'categories'],
   };
 
-  readonly usesBrowser = true;
+  readonly usesBrowser = ROYALROAD_USES_BROWSER;
 
   private readonly loadHtml: HtmlLoader;
 
@@ -59,14 +61,14 @@ export class RoyalRoadSource implements Source {
 
   async getPopular(request: PageRequest = {}): Promise<PagedResult<Story>> {
     const page = normalizePage(request.page);
-    const html = await this.readListing(this.url(ROYALROAD_PATHS.popular, { page }));
+    const html = await readRoyalRoadListing(this.loadHtml, listingUrl('popular', page));
     const listing = parseListing(html, page);
     return toPagedResult(listing.stories, page, listing.hasNext);
   }
 
   async getLatest(request: PageRequest = {}): Promise<PagedResult<Story>> {
     const page = normalizePage(request.page);
-    const html = await this.readListing(this.url(ROYALROAD_PATHS.latest, { page }));
+    const html = await readRoyalRoadListing(this.loadHtml, listingUrl('latest', page));
     const listing = parseListing(html, page);
     return toPagedResult(listing.stories, page, listing.hasNext);
   }
@@ -76,43 +78,52 @@ export class RoyalRoadSource implements Source {
     if (!filters.query) {
       return { items: [], page, hasNext: false, total: 0 };
     }
-    const html = await this.readListing(
-      this.url(ROYALROAD_PATHS.search, { title: filters.query, page }),
-    );
+    const html = await readRoyalRoadListing(this.loadHtml, searchUrl(filters.query, page));
     const listing = parseListing(html, page);
     return toPagedResult(listing.stories, page, listing.hasNext);
   }
 
   async getStory(id: string, options: GetStoryOptions = {}): Promise<StoryDetails | null> {
+    const storyId = normalizeFictionId(id) ?? id;
     const includeContent = options.includeContent ?? true;
-    const html = await this.read(this.url(`/fiction/${id}`), { waitForSelector: 'h1' });
-    const story = parseFiction(id, html);
+    const html = await readRoyalRoadHtml(this.loadHtml, fictionUrl(storyId), {
+      waitForSelector: ROYALROAD_PAGE_SELECTOR,
+    });
+    const story = parseFiction(storyId, html);
     if (!includeContent) return story;
 
-    const chapters = this.toChapters(id, html);
+    const chapters = this.toChapters(storyId, html);
     const pages: StoryPage[] = chapters.map((chapter) => ({
       sourceId: this.info.id,
-      storyId: id,
+      storyId,
       index: chapter.index,
       title: chapter.title,
       id: chapter.id,
       content: null,
-      wordCount: null,
+      wordCount: chapter.wordCount ?? null,
+      volume: chapter.volume ?? null,
+      volumeIndex: chapter.volumeIndex ?? null,
+      publishedAt: chapter.publishedAt ?? null,
     }));
 
     return { ...story, pages };
   }
 
-  async getChapterContent(_storyId: string, chapterId: string): Promise<string | null> {
-    const html = await this.read(this.absolute(chapterId), { waitForSelector: 'h1' });
+  async getChapterContent(storyId: string, chapterId: string): Promise<string | null> {
+    const html = await readRoyalRoadHtml(this.loadHtml, chapterUrl(storyId, chapterId), {
+      waitForSelector: ROYALROAD_PAGE_SELECTOR,
+    });
     const parsed = parseChapterContent(html);
     return parsed.content || null;
   }
 
-  /** All chapters live on the fiction page, embedded in the chapters table. */
+  /** All chapters live on the fiction page, embedded with their volume metadata. */
   async getChapterList(storyId: string): Promise<ChapterRef[]> {
-    const html = await this.read(this.url(`/fiction/${storyId}`), { waitForSelector: 'h1' });
-    return this.toChapters(storyId, html);
+    const normalized = normalizeFictionId(storyId) ?? storyId;
+    const html = await readRoyalRoadHtml(this.loadHtml, fictionUrl(normalized), {
+      waitForSelector: ROYALROAD_PAGE_SELECTOR,
+    });
+    return this.toChapters(normalized, html);
   }
 
   async getTags(): Promise<string[]> {
@@ -127,51 +138,8 @@ export class RoyalRoadSource implements Source {
     return false;
   }
 
-  private toChapters(id: string, html: string): ChapterRef[] {
-    return parseChapterList(html, id).map((chapter, index) => ({
-      id: chapter.path,
-      index,
-      title: chapter.title,
-      url: `${ROYALROAD_BASE_URL}${chapter.path}`,
-      publishedAt: null,
-    }));
-  }
-
-  private url(path: string, query?: Record<string, string | number>): string {
-    const base = `${ROYALROAD_BASE_URL}${path}`;
-    if (!query) return base;
-    const qs = Object.entries(query)
-      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
-      .join('&');
-    return `${base}?${qs}`;
-  }
-
-  private absolute(path: string): string {
-    if (/^https?:\/\//i.test(path)) return path;
-    return `${ROYALROAD_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
-  }
-
-  private async read(url: string, options?: { waitForSelector?: string }): Promise<string> {
-    const html = await this.loadHtml(url, options);
-    if (isCloudflareChallenge(html)) {
-      throw new SourceError('Royal Road is blocking automated access', { code: 'http' });
-    }
-    return html;
-  }
-
-  /** Listing reads; a 404 here means the edge dropped us, not a real miss. */
-  private async readListing(url: string): Promise<string> {
-    try {
-      return await this.read(url);
-    } catch (error) {
-      if (error instanceof NotFoundError) {
-        throw new SourceError('Royal Road is currently unavailable', {
-          code: 'http',
-          originalError: error,
-        });
-      }
-      throw error;
-    }
+  private toChapters(storyId: string, html: string): ChapterRef[] {
+    return toChapterRefs(parseChapterList(html, storyId), storyId);
   }
 }
 

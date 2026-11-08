@@ -2,7 +2,7 @@
   "expo": {
     "name": "Master Reader",
     "slug": "master-reader",
-    "version": "0.2.3",
+    "version": "0.3.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "master-reader",
@@ -10,6 +10,7 @@
     "android": {
       "package": "app.masterreader",
       "versionCode": 1,
+      "permissions": ["android.permission.POST_NOTIFICATIONS"],
       "adaptiveIcon": {
         "backgroundColor": "#101014",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -17,7 +18,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "versionName": "0.2.2"
+      "versionName": "0.3.0"
     },
     "plugins": [
       "expo-router",

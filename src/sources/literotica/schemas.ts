@@ -106,6 +106,7 @@ export const v3StorySchema = z.looseObject({
   author: authorSchema.nullish(),
   /** Empty array on listings without a series; object on series submissions. */
   series: z.union([seriesSchema, z.array(seriesItemSchema)]).nullish(),
+  words_count: numeric.nullish(),
 });
 
 export const v3SearchResponseSchema = z.looseObject({
@@ -125,6 +126,29 @@ export const v3TagPortalResponseSchema = z.looseObject({
   submissions: z.array(v3StorySchema).nullish(),
   meta: z.looseObject({ total: numeric.nullish(), submissions_count: numeric.nullish() }).nullish(),
 });
+
+/** v3 `3/series/{id}`: series metadata (the works are a separate endpoint). */
+export const seriesMetaSchema = z.looseObject({
+  id: idValue,
+  title: z.string(),
+  url: z.string().nullish(),
+  description: z.string().nullish(),
+  state: z.string().nullish(),
+  language: idValue.nullish(),
+  view_count: numeric.nullish(),
+  work_count: numeric.nullish(),
+  created_at: z.string().nullish(),
+  modified_at: z.string().nullish(),
+  user: authorSchema.nullish(),
+});
+
+export const seriesResponseSchema = z.looseObject({
+  success: z.boolean().optional(),
+  data: seriesMetaSchema,
+});
+
+/** v3 `3/series/{id}/works`: ordered works, oldest part first. */
+export const seriesWorksResponseSchema = z.array(v3StorySchema);
 
 export const tagSchema = z.looseObject({
   id: idValue,
@@ -166,5 +190,6 @@ export type V3Story = z.infer<typeof v3StorySchema>;
 export type V3StoryResponse = z.infer<typeof v3StoryResponseSchema>;
 export type V3Series = z.infer<typeof seriesSchema>;
 export type V3SeriesItem = z.infer<typeof seriesItemSchema>;
+export type V3SeriesMeta = z.infer<typeof seriesMetaSchema>;
 export type Tag = z.infer<typeof tagSchema>;
 export type Constants = z.infer<typeof constantsSchema>;

@@ -1,8 +1,9 @@
 import type { Story } from '@/models/story';
 
-import { HttpClient, type FetchLike, type ResponseCacheStore } from '../transport';
+import { HttpClient, NotFoundError, type FetchLike, type ResponseCacheStore } from '../transport';
 import type {
   Category,
+  ChapterRef,
   GetStoryOptions,
   PageRequest,
   PagedResult,
@@ -14,7 +15,18 @@ import type {
 } from '../types';
 import { LITEROTICA_CATEGORIES } from './categories';
 import { LiteroticaClient, type LiteroticaCredentials } from './client';
-import { parseTagList, parseV3List, parseV3Story, parseV3TagStories, toNumber } from './parsers';
+import {
+  parseSeriesChapterRefs,
+  parseTagList,
+  parseV3ChapterText,
+  parseV3List,
+  parseV3SeriesStory,
+  parseV3TagStories,
+  parseV3Work,
+  singleChapterRef,
+  toNumber,
+} from './parsers';
+import { isSeriesNovelId, seriesApiId } from './protocol';
 
 export const LITEROTICA_SOURCE_ID = 'literotica';
 export const LITEROTICA_BASE_URL = 'https://literotica.com/api';
@@ -114,18 +126,53 @@ export class LiteroticaSource implements Source {
     return this.searchV3(filters, request);
   }
 
-  async getStory(id: string, options: GetStoryOptions = {}): Promise<StoryDetails | null> {
-    const includeContent = options.includeContent ?? true;
-    const payload = await this.client.story(id);
-    const parsed = parseV3Story(this.info.id, payload);
+  /**
+   * Resolves either a series id (`series-<id>`) or a work id/slug. A work that
+   * belongs to a series is returned under the series' canonical id, so opening
+   * any part lands on the whole series. Content is never included here; the
+   * chapter list comes from `getChapterList` and text is fetched per chapter.
+   */
+  async getStory(id: string, _options: GetStoryOptions = {}): Promise<StoryDetails | null> {
+    if (isSeriesNovelId(id)) {
+      const payload = await this.client.series(seriesApiId(id));
+      const story = parseV3SeriesStory(this.info.id, payload);
+      return { ...story, seriesId: story.seriesId ?? null, series: null };
+    }
 
+    const payload = await this.client.story(id);
+    const { story, series } = parseV3Work(this.info.id, payload);
     return {
-      ...parsed.story,
-      seriesId: parsed.series?.id ?? null,
-      seriesTitle: parsed.series?.title ?? null,
-      series: parsed.series,
-      pages: includeContent ? parsed.pages : undefined,
+      ...story,
+      seriesId: story.seriesId ?? null,
+      seriesTitle: story.seriesTitle ?? null,
+      series,
     };
+  }
+
+  /**
+   * Literotica chapters are series works (submissions), not pages. The series
+   * endpoint gives the ordered list; a standalone work is a one-chapter novel.
+   */
+  async getChapterList(storyId: string): Promise<ChapterRef[]> {
+    if (isSeriesNovelId(storyId)) {
+      const works = await this.client.seriesWorks(seriesApiId(storyId));
+      return parseSeriesChapterRefs(works);
+    }
+
+    const { story, series } = parseV3Work(this.info.id, await this.client.story(storyId));
+    if (series) {
+      return parseSeriesChapterRefs(await this.client.seriesWorks(series.id));
+    }
+    return [singleChapterRef(story)];
+  }
+
+  async getChapterContent(_storyId: string, chapterId: string): Promise<string | null> {
+    try {
+      return parseV3ChapterText(await this.client.story(chapterId));
+    } catch (error) {
+      if (error instanceof NotFoundError) return null;
+      throw error;
+    }
   }
 
   async getTags(): Promise<string[]> {
@@ -202,12 +249,22 @@ export class LiteroticaSource implements Source {
     const hasNext =
       total !== undefined ? page * pageSize < total : result.stories.length >= pageSize;
 
-    return { items: result.stories, page, hasNext, total };
+    return { items: uniqueById(result.stories), page, hasNext, total };
   }
 }
 
 export function createLiteroticaSource(options?: LiteroticaSourceOptions): LiteroticaSource {
   return new LiteroticaSource(options);
+}
+
+/** A series' parts share one canonical id; keep the first card per page. */
+function uniqueById(stories: Story[]): Story[] {
+  const seen = new Set<string>();
+  return stories.filter((story) => {
+    if (seen.has(story.id)) return false;
+    seen.add(story.id);
+    return true;
+  });
 }
 
 function normalizePage(page?: number): number {

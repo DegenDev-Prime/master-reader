@@ -18,6 +18,7 @@ import { listSourceInfos, getSourceInfo } from '@/services/source-manager';
 import { useTheme } from '@/hooks/use-theme';
 import { useSettingsStore } from '@/stores/settings';
 import { useBackToParent } from '@/navigation/use-parent-back';
+import { uniqueById } from '@/utils/unique-by-id';
 
 export default function SearchScreen() {
   const backToParent = useBackToParent();
@@ -49,7 +50,9 @@ export default function SearchScreen() {
       }
       try {
         const result = await searchNovels(sourceId, { query: text.trim() }, nextPage);
-        setItems((current) => (nextPage === 1 ? result.items : [...current, ...result.items]));
+        setItems((current) =>
+          uniqueById(nextPage === 1 ? result.items : [...current, ...result.items]),
+        );
         setPage(result.page);
         setHasNext(result.hasNext);
       } catch (caught) {

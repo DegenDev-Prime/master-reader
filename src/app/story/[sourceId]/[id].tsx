@@ -93,6 +93,13 @@ export default function StoryScreen() {
       if (!quiet) setSyncing(true);
       try {
         const result = await syncNovel(sourceId, id);
+        if (result.novel.id !== id) {
+          router.replace({
+            pathname: '/story/[sourceId]/[id]',
+            params: { sourceId, id: result.novel.id },
+          });
+          return;
+        }
         setNovel(result.novel);
         setChapters(result.chapters);
         setError(null);
@@ -145,17 +152,18 @@ export default function StoryScreen() {
 
   const openChapter = useCallback(
     (chapterId?: string | null) => {
-      if (!sourceId || !id) return;
+      const novelId = novel?.id ?? id;
+      if (!sourceId || !novelId) return;
       router.push({
         pathname: '/reader/[sourceId]/[novelId]/[chapterId]',
         params: {
           sourceId,
-          novelId: id,
+          novelId,
           chapterId: chapterId ?? current?.id ?? chapters[0]?.id ?? '',
         },
       });
     },
-    [sourceId, id, current, chapters],
+    [sourceId, id, novel, current, chapters],
   );
 
   const backToParent = useBackToParent();
@@ -164,13 +172,14 @@ export default function StoryScreen() {
   const chaptersTarget = useMemo(
     () => ({
       pathname: '/chapters/[sourceId]/[id]',
-      params: { sourceId, id },
+      params: { sourceId, id: novel?.id ?? id },
     }),
-    [id, sourceId],
+    [id, novel, sourceId],
   );
 
   const toggleLibrary = useCallback(async () => {
-    if (!sourceId || !id) return;
+    const storyId = novel?.id ?? id;
+    if (!sourceId || !storyId) return;
     if (inLibrary) {
       Alert.alert(t('story.removeTitle'), t('story.removeMessage'), [
         { text: t('common.cancel'), style: 'cancel' },
@@ -178,7 +187,7 @@ export default function StoryScreen() {
           text: t('story.removeKeep'),
           onPress: () => {
             void (async () => {
-              await libraryRepository.remove(sourceId, id);
+              await libraryRepository.remove(sourceId, storyId);
               setInLibrary(false);
               await useLibraryStore.getState().refresh();
             })();
@@ -189,8 +198,8 @@ export default function StoryScreen() {
           style: 'destructive',
           onPress: () => {
             void (async () => {
-              await chapterDownloadsRemove(sourceId, id);
-              await libraryRepository.remove(sourceId, id);
+              await chapterDownloadsRemove(sourceId, storyId);
+              await libraryRepository.remove(sourceId, storyId);
               setInLibrary(false);
               setDownloaded(0);
               await useLibraryStore.getState().refresh();
@@ -200,14 +209,15 @@ export default function StoryScreen() {
       ]);
       return;
     }
-    await libraryRepository.add(sourceId, id);
+    await libraryRepository.add(sourceId, storyId);
     setInLibrary(true);
     await useLibraryStore.getState().refresh();
-  }, [sourceId, id, inLibrary]);
+  }, [sourceId, id, novel, inLibrary]);
 
   const startDownload = useCallback(
     (count: number | 'all') => {
-      if (!sourceId || !id || chapters.length === 0) return;
+      const novelId = novel?.id ?? id;
+      if (!sourceId || !novelId || chapters.length === 0) return;
       const remaining = chapters.filter((chapter) => !chapter.hasContent);
       const targets = count === 'all' ? remaining : remaining.slice(0, count);
       if (targets.length === 0) {
@@ -218,7 +228,7 @@ export default function StoryScreen() {
       setDownload({ done: 0, total: targets.length });
       void downloadChapterRange(
         sourceId,
-        id,
+        novelId,
         targets.map((chapter) => chapter.id),
         {
           onProgress: (value) =>
@@ -239,7 +249,7 @@ export default function StoryScreen() {
         })
         .finally(() => setDownload(null));
     },
-    [sourceId, id, chapters, loadLocal],
+    [sourceId, id, novel, chapters, loadLocal],
   );
 
   const confirmDownload = useCallback(() => {

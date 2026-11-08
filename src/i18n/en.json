@@ -397,7 +397,9 @@
     "daysAgo": "{{count}} d ago",
     "chapterNumber": "Chapter {{position}}",
     "rewind": "Rewind {{seconds}}",
-    "forward": "Forward {{seconds}}"
+    "forward": "Forward {{seconds}}",
+    "clipFailed": "Part {{part}} could not be generated and was skipped.",
+    "retryClip": "Retry part"
   },
   "downloads": {
     "title": "Downloads",

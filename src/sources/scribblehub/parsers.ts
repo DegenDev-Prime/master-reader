@@ -1,8 +1,14 @@
 import type { Story } from '@/models/story';
 import { decodeHtmlEntities, estimateWordCount } from '@/utils/html';
-import { cleanText, stripTags } from '@/utils/html-parse';
+import { cleanText, extractElementById, getAttribute, stripTags } from '@/utils/html-parse';
 
 import { SCRIBBLEHUB_BASE_URL, SCRIBBLEHUB_SOURCE_ID as SOURCE_ID } from './constants';
+import {
+  chapterIdFromHref,
+  parseChapterPublishedAt,
+  seriesIdFromInput,
+  seriesUrl,
+} from './protocol';
 import type { StoryDetails } from '../types';
 
 export type ScribbleHubChapter = {
@@ -11,8 +17,7 @@ export type ScribbleHubChapter = {
   /** Zero-based order within the novel. */
   index: number;
   title: string;
-  /** Path of the chapter on the provider. */
-  path: string;
+  /** unix seconds */
   publishedAt: number | null;
 };
 
@@ -31,15 +36,6 @@ export type ScribbleHubListingItem = {
   genres: string[];
   description: string | null;
 };
-
-/** Cloudflare serves an interstitial challenge page to non-browser clients. */
-export function isCloudflareChallenge(html: string): boolean {
-  return (
-    /<title>\s*Just a moment/i.test(html) ||
-    /cf-mitigated|challenges\.cloudflare\.com/i.test(html) ||
-    /id="challenge-(running|form)"/i.test(html)
-  );
-}
 
 function absolute(path: string | null): string | null {
   if (!path) return null;
@@ -117,7 +113,7 @@ export function parseListingItem(chunk: string): ScribbleHubListingItem | null {
 export function listingToStory(item: ScribbleHubListingItem): Story {
   return {
     sourceId: SOURCE_ID,
-    id: item.id,
+    id: seriesIdFromInput(item.id),
     title: item.title,
     authorName: item.authorName,
     description: item.description,
@@ -147,10 +143,12 @@ export function parseListing(html: string): ScribbleHubListingItem[] {
 
 /** The series page holds the synopsis, stats and the chapter table. */
 export function parseSeries(id: string, html: string): StoryDetails {
+  const seriesId = seriesIdFromInput(id);
+
   const title =
     stripTags(/<div class="fic_title mb"[^>]*>([\s\S]*?)<\/div>/i.exec(html)?.[1] ?? '') ||
     cleanText(/<meta property="og:title" content="([^"]*)"/i.exec(html)?.[1] ?? '') ||
-    id;
+    seriesId;
 
   const author =
     stripTags(/<span class="auth_name_fic">([\s\S]*?)<\/span>/i.exec(html)?.[1] ?? '') || null;
@@ -179,7 +177,7 @@ export function parseSeries(id: string, html: string): StoryDetails {
 
   return {
     sourceId: SOURCE_ID,
-    id,
+    id: seriesId,
     title,
     authorName: author,
     description: description || null,
@@ -187,7 +185,7 @@ export function parseSeries(id: string, html: string): StoryDetails {
     rating: Number.isFinite(rating) ? rating : null,
     views: statValue('Views'),
     votes: statValue('Favorites'),
-    url: `https://www.scribblehub.com/series/${id}/`,
+    url: seriesUrl(seriesId),
     flags: {},
     tags: genres,
     wordCount: null,
@@ -198,26 +196,50 @@ export function parseSeries(id: string, html: string): StoryDetails {
   };
 }
 
+function chapterDateAfter(html: string, offset: number): number | null {
+  const chunk = html.slice(offset, offset + 400);
+  const span = /<span[^>]*class="[^"]*\bfic_date_pub\b[^"]*"[^>]*>/i.exec(chunk)?.[0];
+  if (!span) return null;
+  const title = /title="([^"]*)"/i.exec(span)?.[1];
+  if (title) return parseChapterPublishedAt(title);
+  const text = /<span[^>]*class="[^"]*\bfic_date_pub\b[^"]*"[^>]*>([\s\S]*?)<\/span>/i.exec(
+    chunk,
+  )?.[1];
+  return parseChapterPublishedAt(text);
+}
+
 /**
  * Parses the chapter table. The provider serves it newest-first, so the list
- * is reversed into reading order and numbered by position.
+ * is reversed into reading order and numbered by position. Duplicate anchors
+ * (the page repeats its table) are collapsed by chapter id.
  */
 export function parseChapterList(html: string): ScribbleHubChapter[] {
-  const entries: { id: string; title: string; path: string; publishedAt: number | null }[] = [];
-  const pattern =
-    /<a class="toc_a" href="([^"]*\/read\/[^"]*\/chapter\/(\d+)\/)"[^>]*>([\s\S]*?)<\/a>/gi;
+  const entries: Omit<ScribbleHubChapter, 'index'>[] = [];
+  const seen = new Set<string>();
+  const pattern = /(<a\b[^>]*\bclass=["'][^"']*\btoc_a\b[^"']*["'][^>]*>)([\s\S]*?)<\/a>/gi;
+
   for (const match of html.matchAll(pattern)) {
-    const title = stripTags(match[3]);
-    if (!title) continue;
-    const path = new URL(match[1], SCRIBBLEHUB_BASE_URL).pathname;
-    entries.push({ id: match[2], title, path, publishedAt: null });
+    const href = getAttribute(match[1], 'href');
+    const id = href ? chapterIdFromHref(href) : null;
+    const title = stripTags(match[2]);
+    if (!id || !title || seen.has(id)) continue;
+    seen.add(id);
+    entries.push({
+      id,
+      title,
+      publishedAt: chapterDateAfter(html, match.index + match[0].length),
+    });
   }
+
   return entries.reverse().map((entry, index) => ({ ...entry, index }));
 }
 
 /** Chapter body text, taken from the reading view. */
 export function parseChapterContent(html: string): { content: string; wordCount: number } {
-  const body = /<div[^>]*class="chp_raw"[^>]*>([\s\S]*?)<\/div>/i.exec(html)?.[1] ?? '';
+  const body =
+    extractElementById(html, 'chp_raw') ??
+    /<div[^>]*class="chp_raw"[^>]*>([\s\S]*?)<\/div>/i.exec(html)?.[1] ??
+    '';
   const content = body.trim();
   const text = decodeHtmlEntities(content.replace(/<[^>]+>/g, ' '));
   return { content, wordCount: estimateWordCount(text) };

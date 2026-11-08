@@ -1,11 +1,10 @@
-import type { Story, StoryPage } from '@/models/story';
+import type { Story } from '@/models/story';
 
 import { normalizePage, toPagedResult } from '../provider-utils';
 import { NotFoundError } from '../transport';
 import type {
   Category,
   ChapterRef,
-  GetStoryOptions,
   PageRequest,
   PagedResult,
   SearchFilters,
@@ -13,13 +12,20 @@ import type {
   SourceInfo,
   StoryDetails,
 } from '../types';
+import { ArchiveClient, type ArchiveFetch } from './client';
 import {
-  ArchiveClient,
+  ARCHIVE_PAGE_SIZE,
+  archiveStoryId,
+  chaptersOf,
+  collapseCreators,
+  creatorUrl,
+  parseArchiveStoryId,
+  postHtml,
+  postSubtitle,
   type ArchiveCreator,
-  type ArchiveFetch,
   type ArchivePost,
   type ArchiveVariant,
-} from './client';
+} from './protocol';
 
 export type ArchiveSourceOptions = {
   variant: ArchiveVariant;
@@ -30,62 +36,6 @@ export type ArchiveSourceOptions = {
   /** Services offered as categories, e.g. `patreon`. */
   services?: string[];
 };
-
-const DEFAULT_PAGE_SIZE = 50;
-
-/**
- * A creator is identified by its platform and id, because the archive's routes
- * need both. The two are joined with a dash that cannot appear in either.
- */
-export function archiveStoryId(service: string, creatorId: string): string {
-  return `${service}:${creatorId}`;
-}
-
-export function parseArchiveStoryId(id: string): { service: string; creatorId: string } | null {
-  const index = id.indexOf(':');
-  if (index <= 0 || index === id.length - 1) return null;
-  return { service: id.slice(0, index), creatorId: id.slice(index + 1) };
-}
-
-/** Strips the archive's markup down to the text a listing row shows. */
-function subtitleOf(post: ArchivePost): string | null {
-  const source = post.subtitle ?? post.content;
-  if (!source) return null;
-  const text = source
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/<\/(p|div|li|h[1-6])>/gi, ' ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return text.length > 0 ? text : null;
-}
-
-/**
- * Builds the chapter body of a post: its own text, then the images it
- * carries. The reader renders HTML blocks, so images become plain `<img>`
- * tags pointing at the archive's thumbnail host.
- */
-function postHtml(post: ArchivePost, client: ArchiveClient): string {
-  const parts: string[] = [];
-  const body = post.content?.trim();
-  if (body) parts.push(body);
-
-  const images = [post.file, ...post.attachments].filter(
-    (item): item is NonNullable<typeof item> => item !== null,
-  );
-  for (const image of images) {
-    const url = client.thumbnailUrl(image.path);
-    if (!url) continue;
-    const alt = image.name ? ` alt="${image.name.replace(/"/g, '')}"` : '';
-    parts.push(`<figure><img src="${url}"${alt}/></figure>`);
-  }
-
-  return parts.join('');
-}
 
 /**
  * A source over a creator archive. Creators are browsable as stories and their
@@ -102,7 +52,7 @@ export class ArchiveSource implements Source {
   constructor(options: ArchiveSourceOptions) {
     this.info = options.info;
     this.client = new ArchiveClient(options.variant, options.fetchJson);
-    this.pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
+    this.pageSize = options.pageSize ?? ARCHIVE_PAGE_SIZE;
     this.services = options.services ?? [];
   }
 
@@ -124,8 +74,7 @@ export class ArchiveSource implements Source {
     return toPagedResult(stories, page, posts.length >= this.pageSize);
   }
 
-  async getStory(id: string, options: GetStoryOptions = {}): Promise<StoryDetails | null> {
-    const includeContent = options.includeContent ?? true;
+  async getStory(id: string): Promise<StoryDetails | null> {
     const parsed = parseArchiveStoryId(id);
     if (!parsed) return null;
 
@@ -147,41 +96,14 @@ export class ArchiveSource implements Source {
       favorited: null,
     };
 
-    const story = this.creatorToStory(creator, posts[0]);
-    if (!includeContent) return story;
-
-    // The pages follow the chapter list's order, which is reading order.
-    const pages: StoryPage[] = [...posts].reverse().map((post, index) => ({
-      sourceId: this.info.id,
-      storyId: id,
-      index,
-      title: post.title,
-      id: post.id,
-      content: null,
-      wordCount: null,
-    }));
-
-    return { ...story, pages };
+    return this.creatorToStory(creator, posts[0]);
   }
 
   async getChapterList(storyId: string): Promise<ChapterRef[]> {
     const parsed = parseArchiveStoryId(storyId);
     if (!parsed) return [];
     const posts = await this.client.creatorPosts(parsed.service, parsed.creatorId);
-    if (posts.length === 0) return [];
-
-    // The archive serves posts newest first; readers expect the oldest post
-    // first, so the list is reversed into reading order. The archive's own
-    // order is the tie-breaker, because a post may carry no date at all.
-    const ordered = [...posts].reverse();
-    return ordered.map((post, index) => ({
-      id: post.id,
-      index,
-      // A post without a title is still a chapter; the reader numbers it.
-      title: post.title,
-      url: `${this.client.siteBase}/${post.service}/${parsed.creatorId}/post/${post.id}`,
-      publishedAt: post.published,
-    }));
+    return chaptersOf(posts, this.client.siteBase, parsed.creatorId);
   }
 
   async getChapterContent(storyId: string, chapterId: string): Promise<string | null> {
@@ -189,7 +111,7 @@ export class ArchiveSource implements Source {
     if (!parsed) return null;
     const post = await this.client.post(parsed.service, parsed.creatorId, chapterId);
     if (!post) return null;
-    const html = postHtml(post, this.client);
+    const html = postHtml(post, this.client.thumbnailBase);
     return html || null;
   }
 
@@ -211,11 +133,11 @@ export class ArchiveSource implements Source {
       id: archiveStoryId(creator.service, creator.id),
       title: creator.name,
       authorName: creator.name,
-      description: latest ? subtitleOf(latest) : null,
+      description: latest ? postSubtitle(latest) : null,
       coverUrl: this.client.avatarUrl(creator.service, creator.id),
       rating: null,
       views: creator.favorited,
-      url: `${this.client.siteBase}/artists/${creator.service}/${creator.id}`,
+      url: creatorUrl(this.client.siteBase, creator.service, creator.id),
       flags: {},
       tags: [creator.service],
       fetchedAt: Math.floor(Date.now() / 1000),
@@ -237,20 +159,11 @@ export class ArchiveSource implements Source {
    * fetched so the row shows a name rather than an id.
    */
   private async postsToStories(posts: ArchivePost[]): Promise<Story[]> {
-    const unique: { service: string; creatorId: string; post: ArchivePost }[] = [];
-    const seen = new Set<string>();
+    const creators = collapseCreators(posts);
+    const profiles = await this.client.resolveProfiles(creators);
 
-    for (const post of posts) {
-      const key = archiveStoryId(post.service, post.creatorId);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push({ service: post.service, creatorId: post.creatorId, post });
-    }
-
-    const profiles = await this.client.resolveProfiles(unique);
-
-    return unique.map(({ service, creatorId, post }) => {
-      const profile = profiles.get(`${service}:${creatorId}`);
+    return creators.map(({ service, creatorId, post }) => {
+      const profile = profiles.get(archiveStoryId(service, creatorId));
       const creator: ArchiveCreator = profile ?? {
         id: creatorId,
         name: creatorId,

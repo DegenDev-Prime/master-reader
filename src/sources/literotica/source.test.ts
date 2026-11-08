@@ -9,6 +9,8 @@ type Responder = () => unknown;
 const routes: Record<string, Responder> = {
   '3/constants': () => loadFixture('constants.json'),
   '3/search/stories': () => loadFixture('v3-search.json'),
+  '3/series/55/works': () => loadFixture('v3-series-works.json'),
+  '3/series/55': () => loadFixture('v3-series.json'),
   '3/stories/': () => loadFixture('v3-story.json'),
   '3/tagsportal/by-name': () => loadFixture('tags-by-name.json'),
   '3/tagsportal/stories': () => loadFixture('v3-tag-portal.json'),
@@ -111,18 +113,71 @@ describe('LiteroticaSource', () => {
     expect(result.items[0].id).toBe('301');
   });
 
-  it('fetches story details with pages and series', async () => {
+  it('resolves a series work to the series novel', async () => {
     const { source } = createSource();
     const details = await source.getStory('101');
 
-    expect(details?.id).toBe('101');
+    expect(details?.id).toBe('series-55');
+    expect(details?.title).toBe('The Long Road');
     expect(details?.seriesId).toBe('55');
     expect(details?.seriesTitle).toBe('The Long Road');
-    expect(details?.pages).toHaveLength(2);
+    expect(details?.pages).toBeUndefined();
     expect(details?.series?.items.map((item) => item.id)).toEqual(['101', '102']);
+  });
 
-    const metaOnly = await source.getStory('101', { includeContent: false });
-    expect(metaOnly?.pages).toBeUndefined();
+  it('fetches series metadata by canonical id', async () => {
+    const { source, calls } = createSource();
+    const details = await source.getStory('series-55');
+
+    expect(calls[0]).toContain('3/series/55');
+    expect(details?.id).toBe('series-55');
+    expect(details?.title).toBe('The & Long Road');
+    expect(details?.description).toBe('A road story told in parts.');
+  });
+
+  it('lists series works as chapters', async () => {
+    const { source, calls } = createSource();
+    const chapters = await source.getChapterList('series-55');
+
+    expect(calls[0]).toContain('3/series/55/works');
+    expect(chapters.map((chapter) => chapter.id)).toEqual(['101', '102']);
+    expect(chapters[0]).toMatchObject({ index: 0, title: 'The & Long Road', wordCount: 8000 });
+  });
+
+  it('treats a standalone story as a one-chapter novel', async () => {
+    const { source } = createSource({
+      '3/stories/201': () => loadFixture('v3-story-standalone.json'),
+    });
+
+    const details = await source.getStory('201');
+    const chapters = await source.getChapterList('201');
+
+    expect(details?.id).toBe('201');
+    expect(details?.series).toBeNull();
+    expect(chapters).toHaveLength(1);
+    expect(chapters[0]).toMatchObject({
+      id: '201',
+      index: 0,
+      title: 'Neon & Rain',
+      wordCount: 2400,
+    });
+  });
+
+  it('fetches a chapter as its full page text', async () => {
+    const { source } = createSource();
+    const text = await source.getChapterContent('series-55', '102');
+
+    expect(text).toContain('The road began at dawn');
+  });
+
+  it('deduplicates series works in a listing', async () => {
+    const { source } = createSource({
+      '3/search/stories': () => loadFixture('v3-search-series.json'),
+    });
+    const result = await source.getPopular();
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].id).toBe('series-55');
   });
 
   it('lists tags and categories', async () => {

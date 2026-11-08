@@ -11,6 +11,8 @@
  * source id against `listSourceInfos()` themselves.
  */
 
+import { seriesNovelId } from '@/sources/literotica/protocol';
+
 export type ResolvedStoryLink =
   | { kind: 'story'; sourceId: string; storyId: string }
   | { kind: 'unsupported' }
@@ -20,13 +22,15 @@ type SourceShape = {
   sourceId: string;
   hosts: string[];
   storyPath: RegExp;
+  toStoryId?: (match: RegExpMatchArray) => string;
 };
 
 const SOURCE_SHAPES: SourceShape[] = [
   {
     sourceId: 'literotica',
     hosts: ['literotica.com'],
-    storyPath: /^\/s\/([a-z0-9-]+)/i,
+    storyPath: /^\/(?:s\/([a-z0-9-]+)|series\/(?:se\/)?([a-z0-9-]+))/i,
+    toStoryId: (match) => (match[2] ? seriesNovelId(match[2]) : match[1]!),
   },
   {
     sourceId: 'novelfire',
@@ -48,9 +52,11 @@ export function resolveStoryLink(input: string): ResolvedStoryLink {
   if (!shape) return { kind: 'unsupported' };
 
   const match = parsed.path.match(shape.storyPath);
-  if (!match?.[1]) return { kind: 'unsupported' };
+  if (!match) return { kind: 'unsupported' };
 
-  return { kind: 'story', sourceId: shape.sourceId, storyId: match[1] };
+  const storyId = shape.toStoryId ? shape.toStoryId(match) : match[1];
+  if (!storyId) return { kind: 'unsupported' };
+  return { kind: 'story', sourceId: shape.sourceId, storyId };
 }
 
 type ParsedLink = { host: string; path: string } | null;

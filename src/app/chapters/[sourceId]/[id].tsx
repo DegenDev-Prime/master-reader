@@ -83,6 +83,13 @@ export default function ChaptersScreen() {
     setRefreshing(true);
     try {
       const result = await syncNovel(sourceId, id);
+      if (result.novel.id !== id) {
+        router.replace({
+          pathname: '/chapters/[sourceId]/[id]',
+          params: { sourceId, id: result.novel.id },
+        });
+        return;
+      }
       setChapters(result.chapters);
       setProgress(await progressRepository.get(sourceId, id));
       setError(false);

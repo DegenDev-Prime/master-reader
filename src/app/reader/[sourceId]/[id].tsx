@@ -36,13 +36,16 @@ export default function LegacyReaderRedirect() {
       }
 
       try {
-        let chapters = await chapterRepository.listMetadata(sourceId, id);
+        let novelId = id;
+        let chapters = await chapterRepository.listMetadata(sourceId, novelId);
         if (chapters.length === 0) {
-          chapters = (await syncNovel(sourceId, id)).chapters;
+          const result = await syncNovel(sourceId, novelId);
+          novelId = result.novel.id;
+          chapters = result.chapters;
         }
         if (cancelled) return;
 
-        const progress = await progressRepository.get(sourceId, id);
+        const progress = await progressRepository.get(sourceId, novelId);
         const pageIndex = page != null ? Number(page) : NaN;
         const target =
           (chapter ? chapters.find((item) => item.id === chapter) : null) ??
@@ -54,7 +57,7 @@ export default function LegacyReaderRedirect() {
           setFailed(true);
           return;
         }
-        router.replace(`/reader/${sourceId}/${id}/${target.id}`);
+        router.replace(`/reader/${sourceId}/${novelId}/${target.id}`);
       } catch {
         if (!cancelled) setFailed(true);
       }

@@ -52,6 +52,8 @@ export default function AudioScreen() {
   const chunkText = useNarrationStore((state) => state.chunkText);
   const chapterWindow = useNarrationStore((state) => state.chapterWindow);
   const error = useNarrationStore((state) => state.error);
+  const failedClipIndex = useNarrationStore((state) => state.failedClipIndex);
+  const retryFailedClip = useNarrationStore((state) => state.retryFailedClip);
   const play = useNarrationStore((state) => state.play);
   const toggle = useNarrationStore((state) => state.toggle);
   const stop = useNarrationStore((state) => state.stop);
@@ -330,6 +332,18 @@ export default function AudioScreen() {
                   {error}
                 </ThemedText>
               ) : null}
+              {failedClipIndex != null ? (
+                <View style={styles.clipWarning}>
+                  <ThemedText type="small" themeColor="warning" accessibilityRole="alert">
+                    {t('player.clipFailed', { part: failedClipIndex + 1 })}
+                  </ThemedText>
+                  <Button
+                    variant="secondary"
+                    title={t('player.retryClip')}
+                    onPress={() => void retryFailedClip()}
+                  />
+                </View>
+              ) : null}
 
               <PlaybackClock chunkIndex={chunkIndex} chunkCount={chunkCount} speed={speed} />
 
@@ -529,6 +543,7 @@ function relativeTime(timestamp: number): string {
 const styles = StyleSheet.create({
   content: { gap: Spacing.four, padding: Spacing.three, paddingBottom: Spacing.six },
   section: { gap: Spacing.two },
+  clipWarning: { gap: Spacing.two, paddingTop: Spacing.two },
   card: { borderWidth: StyleSheet.hairlineWidth },
   recentRow: {
     alignItems: 'center',

@@ -30,6 +30,7 @@ import {
   isStale,
   toSearchFilters,
 } from '@/utils/browse-state';
+import { uniqueById } from '@/utils/unique-by-id';
 
 const SORTS: OptionSheetOption<SearchSort>[] = [
   { value: 'relevance', label: t('sort.relevance') },
@@ -80,11 +81,11 @@ export default function BrowseScreen() {
   const active = searching ? searchQuery : browseQuery;
 
   const browseStories = useMemo(
-    () => browseQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    () => uniqueById(browseQuery.data?.pages.flatMap((page) => page.items) ?? []),
     [browseQuery.data],
   );
   const searchStories = useMemo(
-    () => searchQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    () => uniqueById(searchQuery.data?.pages.flatMap((page) => page.items) ?? []),
     [searchQuery.data],
   );
   const stories = searching ? searchStories : browseStories;

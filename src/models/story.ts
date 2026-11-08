@@ -3,6 +3,8 @@
  * them; UI consumes them. Timestamps are unix seconds.
  */
 
+import type { NovelStatus } from './novel';
+
 export type StoryFlags = {
   isNew?: boolean | null;
   isHot?: boolean | null;
@@ -28,6 +30,7 @@ export type Story = {
   votes?: number | null;
   views?: number | null;
   wordCount?: number | null;
+  status?: NovelStatus | null;
   flags: StoryFlags;
   /** unix seconds */
   publishedAt?: number | null;
@@ -50,6 +53,10 @@ export type StoryPage = {
   id?: string | null;
   content?: string | null;
   wordCount?: number | null;
+  volume?: string | null;
+  volumeIndex?: number | null;
+  /** unix seconds */
+  publishedAt?: number | null;
 };
 
 export type StorySeriesItem = {
@@ -63,6 +70,7 @@ export type StorySeriesItem = {
 export type StorySeries = {
   id: string;
   title: string;
+  url?: string | null;
   items: StorySeriesItem[];
 };
 

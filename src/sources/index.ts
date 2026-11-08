@@ -43,6 +43,12 @@ export {
 } from './literotica';
 export type { LiteroticaCredentials, LiteroticaSourceOptions } from './literotica';
 export {
+  isSeriesNovelId,
+  LITEROTICA_SERIES_PREFIX,
+  seriesApiId,
+  seriesNovelId,
+} from './literotica/protocol';
+export {
   createNovelBuddySource,
   NOVELBUDDY_BASE_URL,
   NOVELBUDDY_PAGE_SIZE,
@@ -60,6 +66,13 @@ export {
   NovelFireSource,
 } from './novelfire';
 export type { NovelFireSourceOptions } from './novelfire';
+export {
+  chapterIdFromNumber,
+  chapterNumberFromId,
+  chapterRedirectTarget,
+  isChapterInterstitial,
+  NOVELFIRE_MIRROR_URL,
+} from './novelfire/protocol';
 export {
   createScribbleHubSource,
   SCRIBBLEHUB_BASE_URL,

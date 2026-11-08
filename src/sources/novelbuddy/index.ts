@@ -1,4 +1,4 @@
-import type { Story, StoryPage } from '@/models/story';
+import type { Story } from '@/models/story';
 
 import { normalizePage, toPagedResult } from '../provider-utils';
 import { HttpClient, NotFoundError, type FetchLike, type ResponseCacheStore } from '../transport';
@@ -22,6 +22,7 @@ import {
   NOVELBUDDY_WEB_URL,
 } from './constants';
 import { parseChapterContent, parseChapters, parseListItem, parseTitle } from './parsers';
+import { homePageAvailable } from './protocol';
 
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
@@ -78,20 +79,16 @@ export class NovelBuddySource implements Source {
 
   async getPopular(request: PageRequest = {}): Promise<PagedResult<Story>> {
     const page = normalizePage(request.page);
+    if (!homePageAvailable(page)) return { items: [], page, hasNext: false, total: 0 };
     const home = await this.client.home();
-    const items = home.popular ?? [];
-    return toPagedResult(items.map(parseListItem), page, items.length >= NOVELBUDDY_PAGE_SIZE);
+    return toPagedResult((home.popular ?? []).map(parseListItem), 1, false);
   }
 
   async getLatest(request: PageRequest = {}): Promise<PagedResult<Story>> {
     const page = normalizePage(request.page);
+    if (!homePageAvailable(page)) return { items: [], page, hasNext: false, total: 0 };
     const home = await this.client.home();
-    const latest = home.latest;
-    const items = latest.items ?? [];
-    const pagination = latest.pagination;
-    const hasNext = pagination ? pagination.has_next : false;
-    const currentPage = pagination ? pagination.page : page;
-    return toPagedResult(items.map(parseListItem), currentPage, hasNext);
+    return toPagedResult((home.latest.items ?? []).map(parseListItem), 1, false);
   }
 
   async search(filters: SearchFilters, request: PageRequest = {}): Promise<PagedResult<Story>> {
@@ -111,24 +108,9 @@ export class NovelBuddySource implements Source {
     );
   }
 
-  async getStory(id: string, options: GetStoryOptions = {}): Promise<StoryDetails | null> {
-    const includeContent = options.includeContent ?? true;
-    const title = await this.client.title(id);
-    const story = parseTitle(title);
-    if (!includeContent) return story;
-
-    const chapters = await this.getChapterList(id);
-    const pages: StoryPage[] = chapters.map((chapter, index) => ({
-      sourceId: this.info.id,
-      storyId: id,
-      index,
-      title: chapter.title,
-      id: chapter.id,
-      content: null,
-      wordCount: null,
-    }));
-
-    return { ...story, pages };
+  /** Metadata only; chapters come from `getChapterList` and text per chapter. */
+  async getStory(id: string, _options: GetStoryOptions = {}): Promise<StoryDetails | null> {
+    return parseTitle(await this.client.title(id));
   }
 
   async getChapterList(storyId: string): Promise<ChapterRef[]> {

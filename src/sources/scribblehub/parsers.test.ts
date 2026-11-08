@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { loadTextFixture } from '@/test-utils/fixtures';
 import {
-  isCloudflareChallenge,
   listingToStory,
   parseChapterContent,
   parseChapterList,
@@ -15,14 +14,8 @@ const listing = () => loadTextFixture('listing.html', 'scribblehub');
 const series = () => loadTextFixture('series.html', 'scribblehub');
 const chapters = () => loadTextFixture('chapters.html', 'scribblehub');
 const chapter = () => loadTextFixture('chapter.html', 'scribblehub');
-const challenge = () => loadTextFixture('challenge.html', 'scribblehub');
 
 describe('scribblehub parsers', () => {
-  it('detects the bot challenge page', () => {
-    expect(isCloudflareChallenge(challenge())).toBe(true);
-    expect(isCloudflareChallenge(listing())).toBe(false);
-  });
-
   it('reads a listing card', () => {
     const items = parseListing(listing());
     expect(items.length).toBeGreaterThan(0);
@@ -45,7 +38,7 @@ describe('scribblehub parsers', () => {
   });
 
   it('reads the series metadata', () => {
-    const story = parseSeries('664073', series());
+    const story = parseSeries('664073-rebirth-of-the-nephilim', series());
 
     expect(story.id).toBe('664073');
     expect(story.title).toBe('Rebirth of the Nephilim');
@@ -55,6 +48,7 @@ describe('scribblehub parsers', () => {
     expect(story.views).toBe(9_680_000);
     expect(story.votes).toBe(295_495);
     expect(story.coverUrl).toContain('scribblehub.com');
+    expect(story.url).toBe('https://www.scribblehub.com/series/664073/');
   });
 
   it('reads the chapter table in reading order', () => {
@@ -62,7 +56,8 @@ describe('scribblehub parsers', () => {
     expect(list.length).toBeGreaterThan(0);
     expect(list[0].index).toBe(0);
     expect(list[0].title).toMatch(/^Chapter/);
-    expect(list[0].path).toContain('/read/');
+    expect(list[0].id).toMatch(/^\d+$/);
+    expect(list[0].publishedAt).toBeGreaterThan(0);
     expect(list.map((chapter) => chapter.index)).toEqual(list.map((_, index) => index));
   });
 

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import type { Story } from '@/models/story';
 
@@ -14,7 +14,12 @@ export const storiesRepository = {
     await db
       .insert(stories)
       .values(values)
-      .onConflictDoUpdate({ target: [stories.sourceId, stories.id], set: values });
+      .onConflictDoUpdate({
+        target: [stories.sourceId, stories.id],
+        // Listings often omit status; keep the last full book parse instead of
+        // overwriting it with null.
+        set: { ...values, status: sql`coalesce(excluded.status, ${stories.status})` },
+      });
   },
 
   async upsertMany(list: Story[]): Promise<void> {

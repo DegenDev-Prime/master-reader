@@ -1,4 +1,5 @@
 import { isAudioPlaying, pauseAudio, playAudioFile, setAudioRate } from '../audio-output';
+import type { ClipSynthesizer } from '../clip-worker';
 import { NarrationStoppedError, type NarratorEngine, type SpeakRequest } from '../engine';
 import { getSherpaTtsModule } from '../native/sherpa-tts';
 import { synthCacheKey, synthCachePath, synthCacheStore, synthTempFile } from '../synth-store';
@@ -14,8 +15,6 @@ export type NeuralEngineDeps = {
   getArtist: () => string;
 };
 
-const PREFETCH_AHEAD = 1;
-
 type ActiveVoice = {
   packId: string;
   dir: string;
@@ -24,24 +23,17 @@ type ActiveVoice = {
 };
 
 /**
- * On-device neural TTS via the sherpa-tts native module. Each chunk is
- * synthesized once to a content-addressed WAV file, then played through the
- * shared expo-audio output — so lockscreen, headset and background behavior
- * come for free, and replays cost no inference.
+ * On-device neural TTS. Synthesis is content-addressed and file-backed, so a
+ * clip is generated once and every later playback is a cache hit. This module
+ * only produces audio; the stack worker decides what to synthesise and the
+ * narrator decides what to play.
  */
-export function createNeuralEngine(
+export function createNeuralSynthesizer(
   engineId: 'piper' | 'kokoro',
   deps: NeuralEngineDeps,
-): NarratorEngine & { prefetch(requests: SpeakRequest[]): void } {
+): ClipSynthesizer {
   let active: ActiveVoice | null = null;
-  /**
-   * Bumped by every stop, so a speak that lost the race between synthesis and
-   * playback can tell it is stale. A plain boolean would also cancel the
-   * prefetch that the next chunk depends on.
-   */
-  let generation = 0;
   let released = false;
-  const prefetching = new Set<string>();
   // Native synthesis is CPU-bound and stateful (one engine instance), so all
   // synthesis is serialized through this promise chain.
   let queueTail: Promise<unknown> = Promise.resolve();
@@ -69,53 +61,62 @@ export function createNeuralEngine(
     return active;
   }
 
-  async function synthesizeToFile(text: string, voice: ActiveVoice, rate: number): Promise<string> {
-    const module = getSherpaTtsModule();
-    if (!module) throw new Error('Neural narration is not available in this build.');
-    const key = await synthCacheKey(engineId, voice.packId, text);
-    const hit = await synthCachePath(key);
-    if (hit) return hit;
-    const tmp = synthTempFile(key);
-    try {
-      if (tmp.exists) tmp.delete();
-      // Speed is applied by the player; synthesis always runs at 1x so one
-      // cached file serves every playback rate.
-      await module.synthesize(text, voice.sid, tmp.uri);
-      void rate;
-      return await synthCacheStore(key, tmp);
-    } finally {
-      // A failed synthesis must not leave a WAV behind in any directory.
-      if (tmp.exists) tmp.delete();
-    }
+  async function synthesize(text: string): Promise<{ uri: string; durationMs: number | null }> {
+    if (released) throw new Error('The neural engine was released.');
+    return runExclusive(async () => {
+      if (released) throw new Error('The neural engine was released.');
+      const module = getSherpaTtsModule();
+      if (!module) throw new Error('Neural narration is not available in this build.');
+      const packId = deps.getVoicePackId();
+      if (!packId) throw new Error('No neural voice selected.');
+      const voice = await ensureVoice(packId);
+      const key = await synthCacheKey(engineId, voice.packId, text);
+      const hit = await synthCachePath(key);
+      if (hit) return { uri: hit, durationMs: null };
+
+      const tmp = synthTempFile(key);
+      try {
+        if (tmp.exists) tmp.delete();
+        const result = await module.synthesize(text, voice.sid, tmp.uri);
+        const uri = await synthCacheStore(key, tmp);
+        const durationMs =
+          result.sampleRate > 0 ? Math.round((result.frames / result.sampleRate) * 1000) : null;
+        return { uri, durationMs };
+      } finally {
+        // A failed synthesis must not leave a WAV behind in any directory.
+        if (tmp.exists) tmp.delete();
+      }
+    });
   }
 
-  function prefetch(requests: SpeakRequest[]): void {
-    const packId = deps.getVoicePackId();
-    if (!packId || released) return;
-    void (async () => {
-      try {
-        for (const request of requests.slice(0, PREFETCH_AHEAD)) {
-          if (released) return;
-          const key = await synthCacheKey(engineId, packId, request.chunk.text);
-          const marker = `${packId}:${key}`;
-          if (prefetching.has(marker)) continue;
-          if (await synthCachePath(key)) continue;
-          prefetching.add(marker);
-          try {
-            await runExclusive(async () => {
-              if (released || (await synthCachePath(key))) return;
-              const voice = await ensureVoice(packId);
-              await synthesizeToFile(request.chunk.text, voice, request.rate);
-            });
-          } finally {
-            prefetching.delete(marker);
-          }
-        }
-      } catch {
-        // Prefetch is best-effort; the foreground speak() surfaces real errors.
-      }
-    })();
-  }
+  return {
+    synthesize,
+    async warmup(): Promise<void> {
+      const packId = deps.getVoicePackId();
+      if (!packId) return;
+      await ensureVoice(packId);
+    },
+    async release(): Promise<void> {
+      released = true;
+      active = null;
+      await getSherpaTtsModule()
+        ?.release()
+        .catch(() => undefined);
+    },
+  };
+}
+
+/**
+ * Legacy one-chunk-at-a-time engine. The main narrator uses the clip stack and
+ * this is kept for voice previews, where a single utterance is all that plays.
+ */
+export function createNeuralEngine(
+  engineId: 'piper' | 'kokoro',
+  deps: NeuralEngineDeps,
+): NarratorEngine {
+  const synthesizer = createNeuralSynthesizer(engineId, deps);
+  let generation = 0;
+  let released = false;
 
   return {
     id: engineId,
@@ -140,12 +141,7 @@ export function createNeuralEngine(
     async speak(request: SpeakRequest): Promise<void> {
       generation += 1;
       const mine = generation;
-      const packId = deps.getVoicePackId() ?? request.voiceId;
-      if (!packId) throw new Error('No neural voice selected.');
-      const uri = await runExclusive(async () => {
-        const voice = await ensureVoice(packId);
-        return synthesizeToFile(request.chunk.text, voice, request.rate);
-      });
+      const { uri } = await synthesizer.synthesize(request.chunk.text);
       if (released || mine !== generation) throw new NarrationStoppedError();
       await playAudioFile(
         uri,
@@ -155,19 +151,11 @@ export function createNeuralEngine(
       );
     },
 
-    prefetch,
-
     async warmup(): Promise<void> {
-      const packId = deps.getVoicePackId();
-      if (!packId) return;
-      // Loading the model is the slow part of the first utterance; doing it
-      // before the session starts keeps it off the critical path.
-      await ensureVoice(packId);
+      await synthesizer.warmup?.();
     },
 
     async setRate(rate: number): Promise<boolean> {
-      // The audio is synthesized at 1x and the player applies the rate, so a
-      // speed change is a live parameter update: no re-synthesis, no restart.
       return setAudioRate(rate);
     },
 
@@ -179,10 +167,7 @@ export function createNeuralEngine(
     async release(): Promise<void> {
       released = true;
       generation += 1;
-      active = null;
-      await getSherpaTtsModule()
-        ?.release()
-        .catch(() => undefined);
+      await synthesizer.release?.();
     },
 
     async isSpeaking(): Promise<boolean> {

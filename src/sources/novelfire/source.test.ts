@@ -100,23 +100,19 @@ describe('NovelFireSource', () => {
     expect(calls[0]).toContain('/genre-fantasy');
   });
 
-  it('returns chapter stubs without content', async () => {
-    const { source } = createSource();
+  it('returns metadata without fetching the chapter list', async () => {
+    const { source, calls } = createSource();
     const details = await source.getStory('shadow-slave');
 
     expect(details?.title).toBe('Shadow Slave');
     expect(details?.authorName).toBe('Guiltythree');
     expect(details?.rating).toBe(4.5);
-    expect(details?.pages).toHaveLength(3);
-    expect(details?.pages?.[0]).toMatchObject({
-      index: 0,
-      title: 'Chapter 1 - 1: Nightmare Begins',
-      id: '1',
-      content: null,
-    });
-
-    const metaOnly = await source.getStory('shadow-slave', { includeContent: false });
-    expect(metaOnly?.pages).toBeUndefined();
+    expect(details?.status).toBe('ongoing');
+    expect(details?.views).toBe(74_700_000);
+    expect(details?.pages).toBeUndefined();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('/book/shadow-slave');
+    expect(calls[0]).not.toContain('/chapters');
   });
 
   it('lists every chapter across the chapter-list pages', async () => {
@@ -124,6 +120,7 @@ describe('NovelFireSource', () => {
     const list = await source.getChapterList('shadow-slave');
     expect(list.map((chapter) => chapter.id)).toEqual(['1', '2', '3']);
     expect(list[0].url).toContain('/book/shadow-slave/chapter-1');
+    expect(list[0].publishedAt).toBe(Date.UTC(2022, 5, 2, 14, 30, 56) / 1000);
   });
 
   it('fetches a chapter content lazily', async () => {
@@ -156,6 +153,32 @@ describe('NovelFireSource', () => {
     const interstitial =
       '<html><head><title>Loading...</title></head><body>' +
       '<script>window.location.href = "https:\\/\\/novelphoenix.com\\/novel\\/shadow-slave\\/chapter-1";</script>' +
+      '</body></html>';
+    let mirrorCalls = 0;
+    const fetchImpl: FetchLike = async (url) => {
+      if (url.includes('novelfire.net')) {
+        return new Response(interstitial, {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        });
+      }
+      if (url.includes('novelphoenix.com')) {
+        mirrorCalls += 1;
+        return new Response(chapter(), { status: 200, headers: { 'content-type': 'text/html' } });
+      }
+      return new Response('not found', { status: 404 });
+    };
+    const { source } = createSource(fetchImpl);
+
+    const content = await source.getChapterContent('shadow-slave', '1');
+    expect(mirrorCalls).toBe(1);
+    expect(content).toContain('frail-looking young man');
+  });
+
+  it('follows a redirect page served through another mirror host', async () => {
+    const interstitial =
+      '<html><head><title>Loading...</title></head><body>' +
+      '<script>setTimeout(() => { window.location.href = "https:\\/\\/novelphoenix.com\\/novel\\/shadow-slave\\/chapter-1?noti=1"; }, 5);</script>' +
       '</body></html>';
     let mirrorCalls = 0;
     const fetchImpl: FetchLike = async (url) => {

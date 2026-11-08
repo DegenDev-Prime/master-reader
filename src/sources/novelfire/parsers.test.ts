@@ -5,7 +5,9 @@ import { loadTextFixture } from '@/test-utils/fixtures';
 import {
   parseBook,
   parseChapterContent,
+  parseChapterDate,
   parseChapterList,
+  parseCount,
   parseLastPage,
   parseListing,
   slugFromHref,
@@ -58,6 +60,24 @@ describe('parseBook', () => {
     expect(details.description).toContain('Growing up in poverty');
     expect(details.categoryName).toBe('Action');
     expect(details.tags).toEqual(['Action', 'Adventure', 'Fantasy', 'Romance']);
+    expect(details.status).toBe('ongoing');
+    expect(details.views).toBe(74_700_000);
+  });
+});
+
+describe('parseCount', () => {
+  it('parses abbreviated site counts', () => {
+    expect(parseCount('74.7M')).toBe(74_700_000);
+    expect(parseCount('29.8K')).toBe(29_800);
+    expect(parseCount('1,234')).toBe(1234);
+    expect(parseCount('nope')).toBeNull();
+  });
+});
+
+describe('parseChapterDate', () => {
+  it('parses the chapter-list timestamp as UTC seconds', () => {
+    expect(parseChapterDate('2022-06-02 14:30:56')).toBe(Date.UTC(2022, 5, 2, 14, 30, 56) / 1000);
+    expect(parseChapterDate(null)).toBeNull();
   });
 });
 
@@ -67,6 +87,7 @@ describe('parseChapterList', () => {
     expect(list).toHaveLength(3);
     expect(list.map((entry) => entry.number)).toEqual([1, 2, 3]);
     expect(list[0].title).toBe('Chapter 1 - 1: Nightmare Begins');
+    expect(list[0].publishedAt).toBe(Date.UTC(2022, 5, 2, 14, 30, 56) / 1000);
   });
 });
 

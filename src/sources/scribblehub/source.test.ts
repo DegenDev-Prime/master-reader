@@ -53,11 +53,19 @@ describe('ScribbleHubSource', () => {
     expect(result.items[0].sourceId).toBe('scribblehub');
   });
 
-  it('reads the series with its chapters', async () => {
-    const { source } = createSource();
+  it('reads the series metadata without fabricating chapter pages', async () => {
+    const { source, expressions } = createSource();
     const story = await source.getStory(SERIES_ID);
+    expect(story?.id).toBe(SERIES_ID);
     expect(story?.title).toBe('Rebirth of the Nephilim');
-    expect(story?.pages?.length).toBeGreaterThan(0);
+    expect(story?.pages).toBeUndefined();
+    expect(expressions).toHaveLength(0);
+  });
+
+  it('resolves a slug id to the canonical numeric id', async () => {
+    const { source } = createSource();
+    const story = await source.getStory('664073-rebirth-of-the-nephilim');
+    expect(story?.id).toBe(SERIES_ID);
   });
 
   it('fetches the chapter list through the page session', async () => {
@@ -65,6 +73,8 @@ describe('ScribbleHubSource', () => {
     const list = await source.getChapterList(SERIES_ID);
     expect(list.length).toBeGreaterThan(0);
     expect(list[0].index).toBe(0);
+    expect(list[0].url).toContain('/read/664073/chapter/');
+    expect(list[0].publishedAt).toBeGreaterThan(0);
     expect(expressions[0]).toContain('wi_getreleases_pagination');
     expect(expressions[0]).toContain(SERIES_ID);
   });
@@ -89,7 +99,7 @@ describe('ScribbleHubSource', () => {
     const { source, calls } = createSource();
     const result = await source.search({ query: 'nephilim' });
     expect(result.items.length).toBeGreaterThan(0);
-    expect(calls[0]).toContain('search=');
+    expect(calls[0]).toContain('sh=nephilim');
   });
 
   it('returns nothing for an empty search', async () => {

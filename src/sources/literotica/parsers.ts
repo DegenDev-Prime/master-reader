@@ -2,9 +2,12 @@ import type { Story, StoryPage, StorySeries } from '@/models/story';
 import { decodeHtmlEntities } from '@/utils/html';
 
 import { ParseError } from '../transport';
-import type { Category } from '../types';
+import type { Category, ChapterRef } from '../types';
+import { seriesNovelId } from './protocol';
 import {
   constantsSchema,
+  seriesResponseSchema,
+  seriesWorksResponseSchema,
   tagListSchema,
   v1ListResponseSchema,
   v1StorySchema,
@@ -19,6 +22,7 @@ import {
   type V2Page,
   type V3Series,
   type V3SeriesItem,
+  type V3SeriesMeta,
   type V3Story,
 } from './schemas';
 
@@ -81,6 +85,13 @@ export function normalizeStoryUrl(value: unknown): string | null {
   return `https://www.literotica.com/s/${value.replace(/^\/+/, '')}`;
 }
 
+export function normalizeSeriesUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith('//')) return `https:${value}`;
+  return `https://www.literotica.com/series/se/${value.replace(/^\/+/, '')}`;
+}
+
 // ---------------------------------------------------------------------------
 // Adapters
 // ---------------------------------------------------------------------------
@@ -98,7 +109,19 @@ function buildStory(sourceId: string, input: NormalizedStory): Story {
   };
 }
 
-function authorFields(author: V1Story['user']) {
+type AuthorLike =
+  | {
+      id?: unknown;
+      user_id?: unknown;
+      userid?: unknown;
+      username?: string | null;
+      name?: string | null;
+      display_name?: string | null;
+    }
+  | null
+  | undefined;
+
+function authorFields(author: AuthorLike) {
   return {
     authorId: parseId(author?.id ?? author?.user_id ?? author?.userid),
     authorName: author?.username ?? author?.name ?? author?.display_name ?? null,
@@ -142,11 +165,12 @@ export function parseV3Series(
 
   return {
     id,
-    title: series.meta?.title ?? '',
+    title: decodeHtmlEntities(series.meta?.title ?? ''),
+    url: normalizeSeriesUrl(series.meta?.url),
     items: items
       .map((item) => ({
         id: parseId(item.id) ?? '',
-        title: item.title,
+        title: decodeHtmlEntities(item.title),
         url: normalizeStoryUrl(item.url),
         categoryId: parseId(item.category),
         categoryName: categoryNameFromInfo(item.category_info),
@@ -223,6 +247,7 @@ export function fromV3Story(sourceId: string, raw: V3Story): Story {
     url: normalizeStoryUrl(raw.url),
     rating: toNumber(raw.rate_all),
     views: toNumber(raw.view_count),
+    wordCount: toNumber(raw.words_count),
     publishedAt: parsePublishedAt(raw.date_approve),
     tags: [],
     raw,
@@ -257,12 +282,28 @@ export function parseV1List(
   return { stories, total: toNumber(data.total) };
 }
 
+function asSeriesStory(work: Story, series: StorySeries | null): Story {
+  if (!series) return work;
+  const position = series.items.findIndex((item) => item.id === work.id);
+  return {
+    ...work,
+    id: seriesNovelId(series.id),
+    title: series.title || work.title,
+    url: series.url ?? work.url,
+    seriesId: series.id,
+    seriesTitle: series.title,
+    seriesPosition: position >= 0 ? position : null,
+  };
+}
+
 export function parseV3List(
   sourceId: string,
   payload: unknown,
 ): { stories: Story[]; total: number | null } {
   const data = parseOrThrow(v3SearchResponseSchema.safeParse(payload), 'v3 search');
-  const stories = (data.data ?? []).map((item) => fromV3Story(sourceId, item));
+  const stories = (data.data ?? []).map((item) =>
+    asSeriesStory(fromV3Story(sourceId, item), parseV3Series(item.series)),
+  );
   return { stories, total: toNumber(data.meta?.total ?? data.meta?.submissions_count) };
 }
 
@@ -271,7 +312,9 @@ export function parseV3TagStories(
   payload: unknown,
 ): { stories: Story[]; total: number | null } {
   const data = parseOrThrow(v3TagPortalResponseSchema.safeParse(payload), 'tag portal');
-  const stories = (data.submissions ?? []).map((item) => fromV3Story(sourceId, item));
+  const stories = (data.submissions ?? []).map((item) =>
+    asSeriesStory(fromV3Story(sourceId, item), parseV3Series(item.series)),
+  );
   return {
     stories,
     total: toNumber(data.meta?.submissions_count ?? data.meta?.total),
@@ -308,6 +351,90 @@ export function parseV3Story(
   }));
 
   return { story, pages, series };
+}
+
+/**
+ * Parses one v3 work without its text. A work that belongs to a series is
+ * returned under the series' canonical novel id so the app can treat the
+ * whole series as one library item.
+ */
+export function parseV3Work(
+  sourceId: string,
+  payload: unknown,
+): { story: Story; series: StorySeries | null } {
+  const data = parseOrThrow(v3StoryResponseSchema.safeParse(payload), 'v3 story');
+  const base = fromV3Story(sourceId, data.submission);
+  const series = parseV3Series(data.submission.series);
+  return { story: asSeriesStory(base, series), series };
+}
+
+/** Parses `3/series/{id}` metadata into the canonical series story. */
+export function parseV3SeriesStory(sourceId: string, payload: unknown): Story {
+  const data = parseOrThrow(seriesResponseSchema.safeParse(payload), 'v3 series');
+  const meta: V3SeriesMeta = data.data;
+
+  return buildStory(sourceId, {
+    id: seriesNovelId(parseId(meta.id) ?? ''),
+    title: decodeHtmlEntities(meta.title),
+    description: meta.description ? decodeHtmlEntities(meta.description) : null,
+    categoryId: null,
+    categoryName: null,
+    lang: parseId(meta.language),
+    url: normalizeSeriesUrl(meta.url),
+    rating: null,
+    views: toNumber(meta.view_count),
+    publishedAt: parsePublishedAt(meta.created_at),
+    tags: [],
+    raw: meta,
+    ...authorFields(meta.user),
+    isNew: null,
+    isHot: null,
+    isWritersPick: null,
+    isContestWinner: null,
+    commentsEnabled: null,
+    ratingEnabled: null,
+    seriesId: parseId(meta.id),
+    seriesTitle: decodeHtmlEntities(meta.title),
+  });
+}
+
+function chapterRefFromWork(work: V3Story, index: number): ChapterRef | null {
+  const id = parseId(work.id);
+  if (!id) return null;
+  return {
+    id,
+    index,
+    title: decodeHtmlEntities(work.title),
+    url: normalizeStoryUrl(work.url),
+    publishedAt: parsePublishedAt(work.date_approve),
+    wordCount: toNumber(work.words_count),
+  };
+}
+
+/** Parses `3/series/{id}/works` into the ordered chapter list. */
+export function parseSeriesChapterRefs(payload: unknown): ChapterRef[] {
+  const works = parseOrThrow(seriesWorksResponseSchema.safeParse(payload), 'v3 series works');
+  return works
+    .map((work, index) => chapterRefFromWork(work, index))
+    .filter((chapter): chapter is ChapterRef => chapter != null);
+}
+
+export function singleChapterRef(story: Story): ChapterRef {
+  return {
+    id: story.id,
+    index: 0,
+    title: story.title,
+    url: story.url ?? null,
+    publishedAt: story.publishedAt ?? null,
+    wordCount: story.wordCount ?? null,
+  };
+}
+
+/** Parses `3/stories/{id}` into the chapter's plain text. */
+export function parseV3ChapterText(payload: unknown): string | null {
+  const data = parseOrThrow(v3StoryResponseSchema.safeParse(payload), 'v3 story');
+  const text = data.pageText?.trim();
+  return text ? text : null;
 }
 
 function tagsFromPage(page: V2Page): string[] {

@@ -1,4 +1,4 @@
-import type { Story, StoryPage } from '@/models/story';
+import type { Story } from '@/models/story';
 import { mapWithConcurrency } from '@/utils/html-parse';
 
 import { normalizePage, toPagedResult } from '../provider-utils';
@@ -15,7 +15,7 @@ import type {
   StoryDetails,
 } from '../types';
 import { NOVELFIRE_CATEGORIES } from './categories';
-import { NovelFireClient, genrePath } from './client';
+import { NovelFireClient } from './client';
 import {
   NOVELFIRE_BASE_URL,
   NOVELFIRE_MAX_CHAPTER_LIST_PAGES,
@@ -29,6 +29,7 @@ import {
   parseLastPage,
   parseListing,
 } from './parsers';
+import { chapterIdFromNumber, chapterNumberFromId, genrePath } from './protocol';
 
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
@@ -45,9 +46,9 @@ export type NovelFireSourceOptions = {
 };
 
 /**
- * Novel Fire source over server-rendered HTML. The novel's chapter list is
- * returned as content-less page stubs; chapter text is fetched lazily through
- * `getChapterContent`, so a 3000-chapter serial never loads all at once.
+ * Novel Fire source over server-rendered HTML. Books have no series layer:
+ * metadata, the paginated chapter list and each chapter's text are three
+ * separate protocol calls, so a 3000-chapter serial never loads all at once.
  */
 export class NovelFireSource implements Source {
   readonly info: SourceInfo = {
@@ -111,23 +112,9 @@ export class NovelFireSource implements Source {
     return this.toPaged(html, page);
   }
 
-  async getStory(id: string, options: GetStoryOptions = {}): Promise<StoryDetails | null> {
-    const includeContent = options.includeContent ?? true;
-    const book = parseBook(id, await this.client.getBook(id));
-    if (!includeContent) return book;
-
-    const chapters = await this.getChapterList(id);
-    const pages: StoryPage[] = chapters.map((chapter) => ({
-      sourceId: this.info.id,
-      storyId: id,
-      index: chapter.index,
-      title: chapter.title,
-      id: chapter.id,
-      content: null,
-      wordCount: null,
-    }));
-
-    return { ...book, pages };
+  /** NovelFire books have no series layer; metadata and chapters are separate. */
+  async getStory(id: string, _options: GetStoryOptions = {}): Promise<StoryDetails | null> {
+    return parseBook(id, await this.client.getBook(id));
   }
 
   async getChapterList(storyId: string): Promise<ChapterRef[]> {
@@ -144,29 +131,34 @@ export class NovelFireSource implements Source {
       pages.push(...rest);
     }
 
-    const seen = new Set<string>();
-    const chapters: ChapterRef[] = [];
+    const byId = new Map<string, ChapterRef>();
     for (const html of pages) {
       for (const chapter of parseChapterList(html, storyId)) {
-        const id = String(chapter.number);
-        if (seen.has(id)) continue;
-        seen.add(id);
-        chapters.push({
+        const id = chapterIdFromNumber(chapter.number);
+        const existing = byId.get(id);
+        if (existing) {
+          // The "latest chapter" shortcut is printed above the list without a
+          // timestamp; keep the full-list date when the duplicate has one.
+          existing.publishedAt ??= chapter.publishedAt;
+          continue;
+        }
+        byId.set(id, {
           id,
-          index: chapters.length,
+          index: 0,
           title: chapter.title,
           url: `${NOVELFIRE_BASE_URL}/book/${storyId}/chapter-${chapter.number}`,
-          publishedAt: null,
+          publishedAt: chapter.publishedAt,
         });
       }
     }
-    chapters.sort((a, b) => Number(a.id) - Number(b.id));
-    return chapters.map((chapter, index) => ({ ...chapter, index }));
+    return [...byId.values()]
+      .sort((a, b) => Number(a.id) - Number(b.id))
+      .map((chapter, index) => ({ ...chapter, index }));
   }
 
   async getChapterContent(storyId: string, chapterId: string): Promise<string | null> {
-    const number = Number(chapterId);
-    if (!Number.isFinite(number)) return null;
+    const number = chapterNumberFromId(chapterId);
+    if (number == null) return null;
 
     try {
       let parsed = parseChapterContent(await this.client.getChapterContent(storyId, number));
@@ -174,7 +166,9 @@ export class NovelFireSource implements Source {
       // chapters are fetched together; one delayed retry recovers it.
       if (!parsed.content) {
         await delay(300);
-        parsed = parseChapterContent(await this.client.getChapterContent(storyId, number));
+        parsed = parseChapterContent(
+          await this.client.getChapterContent(storyId, number, { skipCache: true }),
+        );
       }
       return parsed.content || null;
     } catch (error) {
@@ -211,6 +205,13 @@ function delay(ms: number): Promise<void> {
 
 /** Re-exported for tests/tools that build browse URLs directly. */
 export { genrePath };
+export {
+  chapterIdFromNumber,
+  chapterNumberFromId,
+  chapterRedirectTarget,
+  isChapterInterstitial,
+  NOVELFIRE_MIRROR_URL,
+} from './protocol';
 export {
   NOVELFIRE_BASE_URL,
   NOVELFIRE_MAX_CHAPTER_LIST_PAGES,

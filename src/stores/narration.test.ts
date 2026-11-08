@@ -59,7 +59,15 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/narration/engines/system', () => ({ systemEngine: mocks.systemEngine }));
-vi.mock('@/narration/engines/neural', () => ({ createNeuralEngine: vi.fn(() => ({})) }));
+vi.mock('@/narration/engines/neural', () => ({
+  createNeuralEngine: vi.fn(() => ({})),
+  createNeuralSynthesizer: vi.fn(() => ({ synthesize: vi.fn() })),
+}));
+vi.mock('@/narration/clip-narrator', () => ({ ClipNarrator: class {} }));
+vi.mock('@/narration/synth-store', () => ({
+  setSynthProtectedUris: vi.fn(),
+  setSynthSessionActive: vi.fn(),
+}));
 vi.mock('@/services/catalog', () => ({
   getStoryDetails: mocks.getStoryDetails,
   getStoryPages: mocks.getStoryPages,

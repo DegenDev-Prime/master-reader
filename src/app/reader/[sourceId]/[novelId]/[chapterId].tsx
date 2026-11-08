@@ -173,6 +173,13 @@ export default function ReaderScreen() {
         if (list.length === 0) {
           if (offlineMode) throw new Error(t('reader.notDownloadedMessage'));
           const result = await syncNovel(sourceId, novelId);
+          if (result.novel.id !== novelId) {
+            router.replace({
+              pathname: '/reader/[sourceId]/[novelId]/[chapterId]',
+              params: { sourceId, novelId: result.novel.id, chapterId },
+            });
+            return;
+          }
           list = result.chapters;
         }
         if (cancelled) return;

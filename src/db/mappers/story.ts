@@ -28,6 +28,7 @@ export function toStoryRow(story: Story): NewStoryRow {
     votes: story.votes ?? null,
     views: story.views ?? null,
     wordCount: story.wordCount ?? null,
+    status: story.status ?? null,
     isNew: story.flags.isNew ?? null,
     isHot: story.flags.isHot ?? null,
     isWritersPick: story.flags.isWritersPick ?? null,
@@ -60,6 +61,7 @@ export function toStory(row: StoryRow): Story {
     votes: row.votes,
     views: row.views,
     wordCount: row.wordCount,
+    status: row.status as Story['status'],
     flags: {
       isNew: row.isNew,
       isHot: row.isHot,

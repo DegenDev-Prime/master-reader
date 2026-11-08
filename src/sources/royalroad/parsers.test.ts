@@ -2,27 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { loadTextFixture } from '@/test-utils/fixtures';
 
-import {
-  isCloudflareChallenge,
-  parseChapterContent,
-  parseChapterList,
-  parseFiction,
-  parseListing,
-} from './parsers';
+import { parseChapterContent, parseFiction, parseListing } from './parsers';
 
 const listing = () => loadTextFixture('listing.html', 'royalroad');
 const book = () => loadTextFixture('book.html', 'royalroad');
 const chapter = () => loadTextFixture('chapter.html', 'royalroad');
-
-describe('isCloudflareChallenge', () => {
-  it('detects a real Cloudflare interstitial', () => {
-    expect(isCloudflareChallenge(loadTextFixture('challenge.html', 'royalroad'))).toBe(true);
-  });
-
-  it('does not flag a normal page', () => {
-    expect(isCloudflareChallenge(listing())).toBe(false);
-  });
-});
 
 describe('parseListing', () => {
   it('maps fiction cards', () => {
@@ -101,66 +85,7 @@ describe('parseFiction', () => {
     expect(details.votes).toBe(12345);
     expect(details.description).toContain('teenage mage');
     expect(details.tags).toEqual(['Fantasy', 'Time Loop']);
-  });
-});
-
-describe('parseChapterList', () => {
-  it('maps and sorts chapters', () => {
-    const chapters = parseChapterList(book(), '21220');
-    expect(chapters.map((entry) => entry.number)).toEqual([1, 2]);
-    expect(chapters[0].path).toBe('/fiction/21220/mother-of-learning/chapter/1');
-    expect(chapters[0].title).toBe('Chapter 1: Good Morning, Brother');
-  });
-
-  it('parses the 2026 chapter hrefs with slug tails and dedupes the row anchors', () => {
-    // Chapter rows on the 2026 fiction page carry two anchors per chapter (name
-    // and date cells) and hrefs ending in a chapter-slug segment.
-    const chapters = parseChapterList(
-      `
-      <table id="chapters" data-chapters="2"><tbody>
-        <tr class="chapter-row" data-url="/fiction/21220/mother-of-learning/chapter/301778/1-good-morning-brother" data-volume-id="null">
-          <td><a href="/fiction/21220/mother-of-learning/chapter/301778/1-good-morning-brother">
-            1. Good Morning Brother
-          </a></td>
-          <td class="text-right"><a href="/fiction/21220/mother-of-learning/chapter/301778/1-good-morning-brother" data-content="0"><time title="Sunday, October 28, 2018">Sunday, October 28, 2018</time></a></td>
-        </tr>
-        <tr class="chapter-row" data-url="/fiction/21220/mother-of-learning/chapter/301781/2-lifes-little-problems" data-volume-id="null">
-          <td><a href="/fiction/21220/mother-of-learning/chapter/301781/2-lifes-little-problems">
-            2. Life&#x27;s Little Problems
-          </a></td>
-          <td class="text-right"><a href="/fiction/21220/mother-of-learning/chapter/301781/2-lifes-little-problems" data-content="0"><time title="Wednesday, October 31, 2018">Wednesday, October 31, 2018</time></a></td>
-        </tr>
-      </tbody></table>`,
-      '21220',
-    );
-
-    expect(chapters).toHaveLength(2);
-    expect(chapters.map((entry) => entry.number)).toEqual([301778, 301781]);
-    expect(chapters[0].path).toBe(
-      '/fiction/21220/mother-of-learning/chapter/301778/1-good-morning-brother',
-    );
-    expect(chapters[0].title).toBe('1. Good Morning Brother');
-    expect(chapters[1].path).toBe(
-      '/fiction/21220/mother-of-learning/chapter/301781/2-lifes-little-problems',
-    );
-    expect(chapters[1].title).toBe("2. Life's Little Problems");
-  });
-
-  it('parses chapter hrefs without a fiction slug segment', () => {
-    const chapters = parseChapterList(
-      '<a href="/fiction/21220/chapter/301778">1. Good Morning Brother</a>',
-      '21220',
-    );
-    expect(chapters).toHaveLength(1);
-    expect(chapters[0].path).toBe('/fiction/21220/chapter/301778');
-  });
-
-  it('ignores links to other fictions and non-chapter anchors', () => {
-    const chapters = parseChapterList(
-      '<a href="/fiction/9999/other/chapter/77/list">other</a><a href="/fiction/21220">self</a>',
-      '21220',
-    );
-    expect(chapters).toHaveLength(0);
+    expect(details.url).toBe('https://www.royalroad.com/fiction/21220');
   });
 });
 

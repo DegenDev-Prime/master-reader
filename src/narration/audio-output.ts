@@ -55,23 +55,36 @@ export async function playAudioFile(
   meta: AudioTrackMeta,
   rate: number,
   isAborted: () => boolean,
+  startSeconds = 0,
+  onStart?: () => void,
 ): Promise<void> {
   const current = await ensurePlayer();
   current.replace({ uri });
   current.setPlaybackRate(clampRate(rate));
   current.setActiveForLockScreen(true, { title: meta.title, artist: meta.artist });
   current.play();
+  if (startSeconds > 0) {
+    await current.seekTo(startSeconds).catch(() => undefined);
+  }
 
   const startedAt = Date.now();
   const detector = createEndDetector();
   let finished = false;
+  let started = false;
+  const markStarted = () => {
+    if (started) return;
+    started = true;
+    onStart?.();
+  };
 
   const subscription = current.addListener('playbackStatusUpdate', (status) => {
+    if (status.playing) markStarted();
     if (detector.observe(status)) finished = true;
   });
 
   try {
     while (!finished) {
+      if (current.playing) markStarted();
       if (isAborted()) {
         current.pause();
         throw new NarrationStoppedError();
@@ -121,6 +134,18 @@ export function setAudioRate(rate: number): boolean {
 export function audioPosition(): number | null {
   if (!player || !player.isLoaded) return null;
   return player.currentTime;
+}
+
+/** Exact loaded duration in seconds, or null before the file is ready. */
+export function audioDuration(): number | null {
+  if (!player || !player.isLoaded || !Number.isFinite(player.duration)) return null;
+  return player.duration;
+}
+
+/** Seeks inside the loaded clip; used for mid-clip resume and skips. */
+export async function seekAudio(seconds: number): Promise<void> {
+  if (!player) return;
+  await player.seekTo(Math.max(0, seconds)).catch(() => undefined);
 }
 
 /** Dismisses the notification, releases the native player and resets the session. */

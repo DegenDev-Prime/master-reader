@@ -1,15 +1,19 @@
 import type { HttpClient } from '../transport';
 
 import { NOVELBUDDY_BASE_URL } from './constants';
+import {
+  chapterPath,
+  chaptersPath,
+  NOVELBUDDY_GENRES_PATH,
+  NOVELBUDDY_HOME_PATH,
+  NOVELBUDDY_SEARCH_PATH,
+  searchQuery,
+  titlePath,
+  type NovelBuddyEnvelope,
+} from './protocol';
 
 export { NOVELBUDDY_BASE_URL };
-
-/** The API wraps every payload in `{ success, data }`. */
-export type NovelBuddyEnvelope<T> = {
-  success: boolean;
-  data: T;
-  message?: string;
-};
+export type { NovelBuddyEnvelope };
 
 export type NovelBuddyListItem = {
   id: string;
@@ -119,7 +123,7 @@ export class NovelBuddyClient {
         popular: NovelBuddyListItem[];
         trending: NovelBuddyListItem[];
       }>
-    >('/titles/home');
+    >(NOVELBUDDY_HOME_PATH);
     return response.data;
   }
 
@@ -134,35 +138,29 @@ export class NovelBuddyClient {
         items: NovelBuddyListItem[];
         pagination: NovelBuddyPagination;
       }>
-    >('/titles/search', {
-      query: {
-        query,
-        page,
-        limit,
-        ...(options.sort ? { sort: options.sort } : {}),
-        ...(options.genres?.length ? { genres: options.genres.join(',') } : {}),
-      },
+    >(NOVELBUDDY_SEARCH_PATH, {
+      query: searchQuery(query, page, limit, options),
     });
     return response.data;
   }
 
   async title(id: string): Promise<NovelBuddyTitle> {
     const response = await this.http.get<NovelBuddyEnvelope<{ title: NovelBuddyTitle }>>(
-      `/titles/${id}`,
+      titlePath(id),
     );
     return response.data.title;
   }
 
   async chapters(id: string): Promise<NovelBuddyChapter[]> {
     const response = await this.http.get<NovelBuddyEnvelope<{ chapters: NovelBuddyChapter[] }>>(
-      `/titles/${id}/chapters`,
+      chaptersPath(id),
     );
     return response.data.chapters;
   }
 
   async chapter(id: string, chapterId: string): Promise<NovelBuddyChapterDetail> {
     const response = await this.http.get<NovelBuddyEnvelope<{ chapter: NovelBuddyChapterDetail }>>(
-      `/titles/${id}/chapters/${chapterId}`,
+      chapterPath(id, chapterId),
     );
     return response.data.chapter;
   }
@@ -171,7 +169,7 @@ export class NovelBuddyClient {
     const response =
       await this.http.get<
         NovelBuddyEnvelope<{ items: { id: string; name: string; slug: string }[] }>
-      >('/genres');
+      >(NOVELBUDDY_GENRES_PATH);
     return response.data.items;
   }
 }

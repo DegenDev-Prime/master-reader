@@ -6,12 +6,14 @@ import { RoyalRoadSource } from './index';
 
 const listing = () => loadTextFixture('listing.html', 'royalroad');
 const book = () => loadTextFixture('book.html', 'royalroad');
+const bookWithVolumes = () => loadTextFixture('book-volumes.html', 'royalroad');
 const chapter = () => loadTextFixture('chapter.html', 'royalroad');
 const challenge = () => loadTextFixture('challenge.html', 'royalroad');
 
 const routes: Record<string, () => string> = {
   '/fiction/21220/mother-of-learning/chapter/': chapter,
   '/fiction/21220': book,
+  '/fiction/47514': bookWithVolumes,
   '/fictions/best-rated': listing,
   '/fictions/latest-updates': listing,
   '/fictions/search': listing,
@@ -89,6 +91,22 @@ describe('RoyalRoadSource', () => {
     });
     expect(chapters[1].index).toBe(1);
     expect(calls.filter((call) => call.endsWith('/fiction/21220'))).toHaveLength(1);
+  });
+
+  it('lists volume and date metadata from the embedded chapter JSON', async () => {
+    const { source } = createSource(successResponder);
+    const chapters = await source.getChapterList('47514');
+
+    expect(chapters).toHaveLength(2);
+    expect(chapters[0]).toMatchObject({
+      id: '/fiction/47514/voracity/chapter/768239/chapter-1-a-wonder',
+      title: 'Chapter 1: A Wonder',
+      volume: 'Part 1',
+      volumeIndex: 0,
+      publishedAt: 1634502540,
+    });
+    expect(chapters[1].volumeIndex).toBe(1);
+    expect(chapters[1].publishedAt).toBe(1634700375);
   });
 
   it('fetches a chapter content lazily', async () => {

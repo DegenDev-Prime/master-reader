@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { ArchiveClient, MAX_CREATOR_POSTS, PAGE_SIZE, type ArchiveVariant } from './client';
+import { ArchiveClient } from './client';
+import { ARCHIVE_MAX_CREATOR_POSTS, ARCHIVE_PAGE_SIZE, type ArchiveVariant } from './protocol';
 
 const VARIANT: ArchiveVariant = {
   apiBase: 'https://example.test/api/v1',
@@ -14,14 +15,15 @@ function post(id: string) {
   return { id, user: '1', service: 'patreon', title: `Post ${id}`, content: '', published: null };
 }
 
-/** A creator with `total` posts, served `PAGE_SIZE` at a time. */
+/** A creator with `total` posts, served `ARCHIVE_PAGE_SIZE` at a time. */
 function pagedCreator(total: number) {
   const offsets: number[] = [];
   const fetchJson = async (_path: string, query?: Record<string, string | number>) => {
     const offset = Number(query?.o ?? 0);
     offsets.push(offset);
-    const page = Array.from({ length: Math.max(0, Math.min(PAGE_SIZE, total - offset)) }, (_, i) =>
-      post(String(offset + i)),
+    const page = Array.from(
+      { length: Math.max(0, Math.min(ARCHIVE_PAGE_SIZE, total - offset)) },
+      (_, i) => post(String(offset + i)),
     );
     return page;
   };
@@ -54,13 +56,13 @@ describe('ArchiveClient.creatorPosts', () => {
     const client = new ArchiveClient(VARIANT, async (_path, query) => {
       const offset = Number(query?.o ?? 0);
       offsets.push(offset);
-      if (offset === 0) return Array.from({ length: PAGE_SIZE }, (_, i) => post(String(i)));
+      if (offset === 0) return Array.from({ length: ARCHIVE_PAGE_SIZE }, (_, i) => post(String(i)));
       return [];
     });
 
     const posts = await client.creatorPosts('patreon', '1');
 
-    expect(posts).toHaveLength(PAGE_SIZE);
+    expect(posts).toHaveLength(ARCHIVE_PAGE_SIZE);
     expect(offsets).toEqual([0, 50]);
   });
 
@@ -84,20 +86,20 @@ describe('ArchiveClient.creatorPosts', () => {
 
     expect(posts).toHaveLength(100);
     expect(offsets).toEqual([0, 50]);
-    expect(MAX_CREATOR_POSTS).toBeGreaterThan(PAGE_SIZE);
+    expect(ARCHIVE_MAX_CREATOR_POSTS).toBeGreaterThan(ARCHIVE_PAGE_SIZE);
   });
 
   it('drops duplicate posts across pages', async () => {
     const client = new ArchiveClient(VARIANT, async (_path, query) => {
       const offset = Number(query?.o ?? 0);
-      if (offset === 0) return Array.from({ length: PAGE_SIZE }, (_, i) => post(String(i)));
+      if (offset === 0) return Array.from({ length: ARCHIVE_PAGE_SIZE }, (_, i) => post(String(i)));
       // The second page repeats the last post of the first.
-      return [post(String(PAGE_SIZE - 1)), post('100')];
+      return [post(String(ARCHIVE_PAGE_SIZE - 1)), post('100')];
     });
 
     const posts = await client.creatorPosts('patreon', '1');
 
-    expect(posts).toHaveLength(PAGE_SIZE + 1);
+    expect(posts).toHaveLength(ARCHIVE_PAGE_SIZE + 1);
     expect(new Set(posts.map((item) => item.id)).size).toBe(posts.length);
   });
 });

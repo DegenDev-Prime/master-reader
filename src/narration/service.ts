@@ -24,6 +24,8 @@ export type NarratorListener = {
   onChunk?: (index: number) => void;
   onDone?: (reason: FinishReason) => void;
   onError?: (error: Error) => void;
+  /** A clip was permanently skipped; playback continues with the next one. */
+  onWarning?: (index: number) => void;
 };
 
 export type NarratorDeps = {

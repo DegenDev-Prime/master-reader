@@ -6,11 +6,13 @@ import {
   progressRepository,
 } from '@/db/repositories';
 import { chapterRepository } from '@/db/repositories/chapters';
-import { Narrator, seekTargetAfterSeconds } from '@/narration/service';
+import { Narrator, seekTargetAfterSeconds, type NarratorListener } from '@/narration/service';
 import { chunkPages, type SpeechChunk } from '@/narration/chunker';
+import { ClipNarrator } from '@/narration/clip-narrator';
 import { systemEngine } from '@/narration/engines/system';
-import { createNeuralEngine } from '@/narration/engines/neural';
+import { createNeuralSynthesizer } from '@/narration/engines/neural';
 import type { NarratorEngine } from '@/narration/engine';
+import { setSynthProtectedUris, setSynthSessionActive } from '@/narration/synth-store';
 import { chunkOffsets } from '@/narration/player-estimates';
 import { buildSeriesQueue } from '@/narration/queue';
 import {
@@ -79,6 +81,8 @@ type NarrationState = {
   sleep: SleepTimerState;
   bookmarks: NarrationBookmark[];
   error: string | null;
+  /** Chunk whose audio was permanently skipped, if any. */
+  failedClipIndex: number | null;
   /** Index of the narrating story within its series; -1 when standalone. */
   seriesPosition: number;
   /** Number of chapters in the narrating story's series; 0 when standalone. */
@@ -105,6 +109,7 @@ type NarrationState = {
   refreshBookmarks: () => Promise<void>;
   loadBookmarksFor: (sourceId: string, storyId: string) => Promise<void>;
   removeBookmark: (id: string) => Promise<void>;
+  retryFailedClip: () => Promise<void>;
   playFromChunk: (
     sourceId: string,
     storyId: string,
@@ -118,7 +123,12 @@ type NarrationState = {
   playPrevInQueue: () => Promise<void>;
 };
 
-let narrator: Narrator | null = null;
+type NarrationController = Pick<Narrator, 'play' | 'pause' | 'stop' | 'setRate' | 'warmUp'> & {
+  release?: () => Promise<void>;
+  retry?: (index: number) => void;
+};
+
+let narrator: NarrationController | null = null;
 let narratorEngineKey = '';
 let activeEngine: NarratorEngine | null = null;
 let chunks: SpeechChunk[] = [];
@@ -279,20 +289,106 @@ async function ensureSeries(sourceId: string, storyId: string): Promise<StorySer
   return seriesItems;
 }
 
-/** Resolves the configured engine, verifying neural voice packs are installed. */
-function resolveEngine(): NarratorEngine {
-  const narration = useSettingsStore.getState().settings.narration;
-  if (narration.engine === 'system') return systemEngine;
-  const pack = narration.voiceId ? voicePackById(narration.voiceId) : null;
-  if (!pack || pack.engine !== narration.engine) {
-    throw new Error('Selected neural voice is not downloaded.');
-  }
-  return createNeuralEngine(narration.engine, {
-    getVoicePackId: () => pack.id,
-    getLanguage: () => useSettingsStore.getState().settings.defaultLanguage,
-    getTitle: () => useNarrationStore.getState().title ?? 'Narration',
-    getArtist: () => pack.name,
-  });
+function createProgressSink(): (chunkIndex: number) => void {
+  return (chunkIndex) => {
+    const state = useNarrationStore.getState();
+    if (state.sourceId && state.storyId) {
+      void narrationRepository.save({
+        sourceId: state.sourceId,
+        storyId: state.storyId,
+        engine: useSettingsStore.getState().settings.narration.engine,
+        voiceId: useSettingsStore.getState().settings.narration.voiceId,
+        speed: state.speed,
+        chunkIndex,
+      });
+      // Keep the text reader in sync so it opens where audio left off.
+      const chunk = chunks[chunkIndex];
+      if (narrationChapterList.length > 0 && chunk) {
+        const chapter = narrationChapterList.find((item) => item.position === chunk.pageIndex);
+        if (chapter) {
+          const chapterChunks = chunks.filter((item) => item.pageIndex === chunk.pageIndex);
+          const within = chapterChunks.indexOf(chunk);
+          void progressRepository.save({
+            sourceId: state.sourceId,
+            storyId: state.storyId,
+            pageIndex: chapter.position,
+            chapterId: chapter.id,
+            pageCount: narrationChapterTotal,
+            scrollPct:
+              chapterChunks.length > 1
+                ? Math.min(1, Math.max(0, within / (chapterChunks.length - 1)))
+                : 0,
+            paragraphIndex: 0,
+          });
+        }
+      } else {
+        const pageIndex = pageIndexForChunk(chunks, chunkIndex);
+        const pageCount = pageCountForChunks(chunks);
+        if (pageCount > 0) {
+          void saveReadingProgress({
+            sourceId: state.sourceId,
+            storyId: state.storyId,
+            pageIndex,
+            pageCount,
+          });
+        }
+      }
+    }
+    useNarrationStore.setState({ chunkIndex });
+  };
+}
+
+function createNarrationListener(): NarratorListener {
+  return {
+    onStatus: (status) => {
+      const now = Date.now();
+      const previous = useNarrationStore.getState().chunkStartedAt;
+      if (status !== 'playing' && previous > 0) {
+        // The voice stopped: the time it spent belongs to it, the pause
+        // that follows does not.
+        if (speakingIndex >= 0) {
+          chunkDurations[speakingIndex] = Math.max(0, now - previous);
+        }
+        pausedPosition = (now - previous) / 1000 + chunkOffsetInto;
+      }
+      useNarrationStore.setState({ status, chunkStartedAt: now, now });
+      if (status === 'playing') startClock();
+      else stopClock();
+    },
+    onChunk: (index) => {
+      const now = Date.now();
+      const previous = useNarrationStore.getState().chunkStartedAt;
+      if (previous > 0 && speakingIndex >= 0) {
+        chunkDurations[speakingIndex] = Math.max(0, now - previous);
+      }
+      // The head start covers only the chunk it was entered with; once the
+      // voice moves on, the plain chunk clock is the position again.
+      if (index !== offsetChunkIndex) chunkOffsetInto = 0;
+      speakingIndex = index;
+      useNarrationStore.setState({
+        chunkIndex: index,
+        chunkId: chunks[index]?.id ?? null,
+        chunkText: chunks[index]?.text ?? null,
+        chunkStartedAt: now,
+      });
+    },
+    onDone: (reason) => {
+      const store = useNarrationStore.getState();
+      if (reason === 'sleep' || reason === 'endOfChapter') {
+        store.clearSleep();
+      }
+      if (reason === 'finished') {
+        void store.playNextInQueue();
+      }
+    },
+    onError: (error) => {
+      console.warn('Narration failed', error);
+      useNarrationStore.setState({ error: error.message, status: 'error' });
+    },
+    onWarning: (index) => {
+      useNarrationStore.setState({ failedClipIndex: index });
+    },
+  };
 }
 
 /**
@@ -306,7 +402,8 @@ async function releaseNarrator(): Promise<void> {
   narratorEngineKey = '';
   if (previous) {
     try {
-      await previous.stop();
+      if (previous.release) await previous.release();
+      else await previous.stop();
     } catch {
       // The engine is going away anyway.
     }
@@ -325,114 +422,43 @@ function narratorKey(): string {
   return `${narration.engine}:${narration.voiceId ?? ''}`;
 }
 
-function ensureNarrator(): Narrator {
+function ensureNarrator(): NarrationController {
   const key = narratorKey();
   if (!narrator || narratorEngineKey !== key) {
-    const engine = resolveEngine();
-    activeEngine = engine;
-    narrator = new Narrator(
-      {
-        engine,
-        getSleepState: () => useNarrationStore.getState().sleep,
-        nowMs: () => Date.now(),
-        getRate: () => useNarrationStore.getState().speed,
-        onProgress: (chunkIndex) => {
-          const state = useNarrationStore.getState();
-          if (state.sourceId && state.storyId) {
-            void narrationRepository.save({
-              sourceId: state.sourceId,
-              storyId: state.storyId,
-              engine: useSettingsStore.getState().settings.narration.engine,
-              voiceId: useSettingsStore.getState().settings.narration.voiceId,
-              speed: state.speed,
-              chunkIndex,
-            });
-            // Keep the text reader in sync so it opens where audio left off.
-            const chunk = chunks[chunkIndex];
-            if (narrationChapterList.length > 0 && chunk) {
-              const chapter = narrationChapterList.find(
-                (item) => item.position === chunk.pageIndex,
-              );
-              if (chapter) {
-                const chapterChunks = chunks.filter((item) => item.pageIndex === chunk.pageIndex);
-                const within = chapterChunks.indexOf(chunk);
-                void progressRepository.save({
-                  sourceId: state.sourceId,
-                  storyId: state.storyId,
-                  pageIndex: chapter.position,
-                  chapterId: chapter.id,
-                  pageCount: narrationChapterTotal,
-                  scrollPct:
-                    chapterChunks.length > 1
-                      ? Math.min(1, Math.max(0, within / (chapterChunks.length - 1)))
-                      : 0,
-                  paragraphIndex: 0,
-                });
-              }
-            } else {
-              const pageIndex = pageIndexForChunk(chunks, chunkIndex);
-              const pageCount = pageCountForChunks(chunks);
-              if (pageCount > 0) {
-                void saveReadingProgress({
-                  sourceId: state.sourceId,
-                  storyId: state.storyId,
-                  pageIndex,
-                  pageCount,
-                });
-              }
-            }
-          }
-          useNarrationStore.setState({ chunkIndex });
+    const narration = useSettingsStore.getState().settings.narration;
+    const listener = createNarrationListener();
+    const base = {
+      getSleepState: () => useNarrationStore.getState().sleep,
+      nowMs: () => Date.now(),
+      getRate: () => useNarrationStore.getState().speed,
+      onProgress: createProgressSink(),
+    };
+
+    if (narration.engine === 'system') {
+      activeEngine = systemEngine;
+      narrator = new Narrator({ engine: systemEngine, ...base }, listener);
+    } else {
+      const pack = narration.voiceId ? voicePackById(narration.voiceId) : null;
+      if (!pack || pack.engine !== narration.engine) {
+        throw new Error('Selected neural voice is not downloaded.');
+      }
+      activeEngine = null;
+      narrator = new ClipNarrator(
+        {
+          ...base,
+          synth: createNeuralSynthesizer(narration.engine, {
+            getVoicePackId: () => pack.id,
+            getLanguage: () => useSettingsStore.getState().settings.defaultLanguage,
+            getTitle: () => useNarrationStore.getState().title ?? 'Narration',
+            getArtist: () => pack.name,
+          }),
+          title: () => useNarrationStore.getState().title ?? 'Narration',
+          artist: () => pack.name,
+          protect: setSynthProtectedUris,
         },
-      },
-      {
-        onStatus: (status) => {
-          const now = Date.now();
-          const previous = useNarrationStore.getState().chunkStartedAt;
-          if (status !== 'playing' && previous > 0) {
-            // The voice stopped: the time it spent belongs to it, the pause
-            // that follows does not.
-            if (speakingIndex >= 0) {
-              chunkDurations[speakingIndex] = Math.max(0, now - previous);
-            }
-            pausedPosition = (now - previous) / 1000 + chunkOffsetInto;
-          }
-          useNarrationStore.setState({ status, chunkStartedAt: now, now });
-          if (status === 'playing') startClock();
-          else stopClock();
-        },
-        onChunk: (index) => {
-          const now = Date.now();
-          const previous = useNarrationStore.getState().chunkStartedAt;
-          if (previous > 0 && speakingIndex >= 0) {
-            chunkDurations[speakingIndex] = Math.max(0, now - previous);
-          }
-          // The head start covers only the chunk it was entered with; once the
-          // voice moves on, the plain chunk clock is the position again.
-          if (index !== offsetChunkIndex) chunkOffsetInto = 0;
-          speakingIndex = index;
-          useNarrationStore.setState({
-            chunkIndex: index,
-            chunkId: chunks[index]?.id ?? null,
-            chunkText: chunks[index]?.text ?? null,
-            chunkStartedAt: now,
-          });
-        },
-        onDone: (reason) => {
-          const store = useNarrationStore.getState();
-          if (reason === 'sleep' || reason === 'endOfChapter') {
-            store.clearSleep();
-          }
-          if (reason === 'finished') {
-            void store.playNextInQueue();
-          }
-        },
-        onError: (error) => {
-          console.warn('Narration failed', error);
-          useNarrationStore.setState({ error: error.message, status: 'error' });
-        },
-      },
-    );
+        listener,
+      );
+    }
     narratorEngineKey = key;
   }
   return narrator;
@@ -616,6 +642,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
   sleep: stopSleepTimer(),
   bookmarks: [],
   error: null,
+  failedClipIndex: null,
   seriesPosition: -1,
   seriesLength: 0,
 
@@ -681,10 +708,13 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       chapterWindow: [],
       chapterTotal: 0,
       error: null,
+      failedClipIndex: null,
       bookmarks: [],
       seriesPosition: -1,
       seriesLength: 0,
     });
+    setSynthSessionActive(true);
+    setSynthProtectedUris([]);
 
     try {
       // Pronunciation rules live in the settings store; hydrate once, then the
@@ -872,6 +902,8 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       // Best-effort native cleanup.
     }
     activeEngine = null;
+    setSynthSessionActive(false);
+    setSynthProtectedUris([]);
     if (useSettingsStore.getState().settings.narration.engine !== 'system') {
       const { unloadAudioPlayer } = await import('@/narration/audio-output');
       await unloadAudioPlayer();
@@ -887,6 +919,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       chunkStartedAt: 0,
       chapterWindow: [],
       chapterTotal: 0,
+      failedClipIndex: null,
       seriesPosition: -1,
       seriesLength: 0,
     });
@@ -1083,6 +1116,19 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     await get().refreshBookmarks();
   },
 
+  async retryFailedClip() {
+    const index = get().failedClipIndex;
+    if (index == null) return;
+    set({ failedClipIndex: null, error: null });
+    try {
+      ensureNarrator().retry?.(index);
+    } catch {
+      return;
+    }
+    if (get().status === 'error') await get().seekChunk(index, true);
+    else if (get().status === 'paused') await get().resume();
+  },
+
   async playFromChunk(sourceId, storyId, chunkIndex, title = null) {
     const current = get();
     if (current.sourceId !== sourceId || current.storyId !== storyId || chunks.length === 0) {
@@ -1137,11 +1183,11 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       }
     }
 
-    // The chunk list is rebuilt so the chapters stay in reading order, in the
-    // same array the narrator holds.
+    // A new spine replaces the old one; the narrator sees a new array and
+    // resets its clip stack instead of renumbering live indices.
     const rebuilt = chunkPages(narrationPages);
     if (rebuilt.length === 0) return;
-    chunks.splice(0, chunks.length, ...rebuilt);
+    chunks = rebuilt;
     set({ chunkCount: chunks.length });
     await get().seekChunk(chunkIndexForPage(chunks, chapter.position), true);
   },

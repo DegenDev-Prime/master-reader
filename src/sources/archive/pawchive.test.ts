@@ -81,7 +81,7 @@ describe('PawchiveSource', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('reads a creator with its posts', async () => {
+  it('reads a creator without a chapter stub layer', async () => {
     const { source } = createSource((url) =>
       url.includes('/profile') ? jsonResponse(CREATOR) : jsonResponse([POST]),
     );
@@ -89,7 +89,10 @@ describe('PawchiveSource', () => {
     const story = await source.getStory('patreon:30500811');
     expect(story?.title).toBe('BOKABA');
     expect(story?.sourceId).toBe('pawchive');
-    expect(story?.pages).toHaveLength(1);
+    expect(story?.pages).toBeUndefined();
+
+    const list = await source.getChapterList('patreon:30500811');
+    expect(list.map((chapter) => chapter.id)).toEqual(['172633714']);
   });
 
   it('walks every page of a creator post list', async () => {
@@ -115,7 +118,7 @@ describe('PawchiveSource', () => {
     expect(calls.filter((url) => url.includes('o=')).length).toBe(3);
   });
 
-  it('lists a creator posts in the same order as its story pages', async () => {
+  it('lists a creator posts in the same order as the chapter source', async () => {
     const { source } = createSource((url) =>
       url.includes('/profile') ? jsonResponse(CREATOR) : jsonResponse([POST]),
     );
@@ -123,7 +126,8 @@ describe('PawchiveSource', () => {
     const story = await source.getStory('patreon:30500811');
     const list = await source.getChapterList('patreon:30500811');
 
-    expect(list.map((chapter) => chapter.id)).toEqual(story?.pages?.map((page) => page.id) ?? []);
+    expect(story?.pages).toBeUndefined();
+    expect(list.map((chapter) => chapter.id)).toEqual(['172633714']);
   });
 
   it('lists a creator posts in reading order', async () => {

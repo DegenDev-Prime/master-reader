@@ -1,3 +1,4 @@
+import type { NovelStatus } from '@/models/novel';
 import type { Story } from '@/models/story';
 import { estimateWordCount, htmlToPlainText } from '@/utils/html';
 import {
@@ -17,6 +18,8 @@ export type NovelFireChapter = {
   /** 1-based chapter number as published by the site. */
   number: number;
   title: string;
+  /** unix seconds */
+  publishedAt: number | null;
 };
 
 export type NovelFireListing = {
@@ -35,6 +38,43 @@ function metaContent(
 
 export function slugFromHref(href: string): string {
   return href.replace(/^\/book\//, '').split(/[/?#]/)[0] ?? '';
+}
+
+/** NovelFire abbreviates view/bookmark counts as `1.2M`, `74.7M`, `29.8K`. */
+export function parseCount(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const match = value.trim().match(/^([\d.,]+)\s*([kmb])?$/i);
+  if (!match) return null;
+  const base = Number(match[1].replace(/,/g, ''));
+  if (!Number.isFinite(base)) return null;
+  const scale = { k: 1_000, m: 1_000_000, b: 1_000_000_000 }[
+    (match[2] ?? '').toLowerCase() as 'k' | 'm' | 'b'
+  ];
+  return scale ? Math.round(base * scale) : Math.round(base);
+}
+
+export function parseChapterDate(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const iso = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : Math.round(ms / 1000);
+}
+
+function parseStatus(html: string): NovelStatus | null {
+  const value = firstMatch(
+    html,
+    /<strong[^>]*class="(ongoing|completed|hiatus|cancelled|dropped)"[^>]*>[^<]*<\/strong>\s*<small>\s*Status\s*<\/small>/i,
+  )?.toLowerCase();
+  if (value === 'ongoing') return 'ongoing';
+  if (value === 'completed') return 'completed';
+  if (value === 'hiatus') return 'hiatus';
+  if (value === 'cancelled' || value === 'dropped') return 'cancelled';
+  return null;
+}
+
+function parseViews(html: string): number | null {
+  const match = firstMatch(html, /<i[^>]*class="icon-eye"[^>]*><\/i>\s*([^<]+)/i);
+  return parseCount(match?.replace(/<[^>]+>/g, '') ?? null);
 }
 
 export function hasNextPage(html: string, page: number): boolean {
@@ -116,8 +156,9 @@ export function parseBook(slug: string, html: string): StoryDetails {
     coverUrl: absoluteUrl(NOVELFIRE_BASE_URL, cover),
     rating: toNumberOrNull(firstMatch(html, /"ratingValue"\s*:\s*"?([0-9.]+)/i)),
     votes: toNumberOrNull(firstMatch(html, /"ratingCount"\s*:\s*"?([0-9]+)/i)),
-    views: null,
+    views: parseViews(html),
     wordCount: null,
+    status: parseStatus(html),
     flags: {},
     tags: genres.map((genre) => genre.name),
     seriesId: null,
@@ -142,10 +183,14 @@ function parseGenres(html: string): Category[] {
 
 export function parseChapterList(html: string, slug: string): NovelFireChapter[] {
   const escaped = slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`href="/book/${escaped}/chapter-(\\d+)"[^>]*title="([^"]*)"`, 'gi');
+  const pattern = new RegExp(
+    `href="/book/${escaped}/chapter-(\\d+)"[^>]*title="([^"]*)"[^>]*>([\\s\\S]*?)</a>`,
+    'gi',
+  );
   const chapters = allMatches(html, pattern).map((match) => ({
     number: Number(match[1]),
     title: cleanText(match[2]),
+    publishedAt: parseChapterDate(firstMatch(match[3], /<time\b[^>]*datetime="([^"]+)"/i)),
   }));
   return chapters
     .filter((chapter) => Number.isFinite(chapter.number) && chapter.number > 0)

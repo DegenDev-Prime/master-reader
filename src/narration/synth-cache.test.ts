@@ -43,6 +43,14 @@ describe('selectEvictions', () => {
   it('handles an empty index', () => {
     expect(selectEvictions({}, 10, 100)).toEqual([]);
   });
+
+  it('never evicts a protected playhead clip', () => {
+    expect(selectEvictions(index, 150, 300, new Set(['old']))).toEqual(['mid', 'new']);
+  });
+
+  it('stops when only protected entries remain', () => {
+    expect(selectEvictions(index, 150, 300, new Set(['old', 'mid', 'new']))).toEqual([]);
+  });
 });
 
 describe('reconcileIndex', () => {

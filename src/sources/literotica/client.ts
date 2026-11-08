@@ -25,6 +25,7 @@ export type LiteroticaSearchParams = {
 const PATHS = {
   search: '3/search/stories',
   story: '3/stories',
+  series: '3/series',
   tagsByName: '3/tagsportal/by-name',
   tagStories: '3/tagsportal/stories',
   tagsTop: '3/tagsportal/top',
@@ -50,6 +51,14 @@ export class LiteroticaClient {
 
   story(id: string): Promise<unknown> {
     return this.get(`${PATHS.story}/${encodeURIComponent(id)}`);
+  }
+
+  series(id: string): Promise<unknown> {
+    return this.get(`${PATHS.series}/${encodeURIComponent(id)}`);
+  }
+
+  seriesWorks(id: string): Promise<unknown> {
+    return this.get(`${PATHS.series}/${encodeURIComponent(id)}/works`);
   }
 
   topTags(params: { limit: number; period: string; periodCheck: boolean }): Promise<unknown> {

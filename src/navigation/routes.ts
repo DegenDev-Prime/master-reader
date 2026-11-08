@@ -18,10 +18,6 @@ export function openChapters(sourceId: string, id: string): void {
   router.push(`/chapters/${sourceId}/${id}` as RelativePathString);
 }
 
-export function openSeries(sourceId: string, id: string): void {
-  router.push(`/series/${sourceId}/${id}`);
-}
-
 /** Stable `Story`-row handler so memoized list rows keep referential equality. */
 export function useOpenStory(): (story: Story) => void {
   return useCallback((story: Story) => openStory(story.sourceId, story.id), []);

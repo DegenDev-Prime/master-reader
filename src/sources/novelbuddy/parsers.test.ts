@@ -5,7 +5,6 @@ import {
   parseChapters,
   parseListItem,
   parseTitle,
-  stripFrontMatter,
 } from '@/sources/novelbuddy/parsers';
 import type {
   NovelBuddyChapter,
@@ -88,22 +87,6 @@ describe('novelbuddy parsers', () => {
     ];
 
     expect(parseChapters(chapters).map((chapter) => chapter.id)).toEqual(['c1', 'extra']);
-  });
-
-  it('strips the machine-translation preamble', () => {
-    const html =
-      '<div></div><p>My Novel</p><p>Author: Someone</p><p>Summary:</p><p>A short summary.</p>' +
-      '<p>Main text</p><p></p><p>Chapter 1 The Start</p><p>The body.</p>';
-
-    const stripped = stripFrontMatter(html);
-    expect(stripped).toContain('Chapter 1 The Start');
-    expect(stripped).not.toContain('Author: Someone');
-    expect(stripped).not.toContain('Main text');
-  });
-
-  it('keeps ordinary chapters untouched', () => {
-    const html = '<p>Chapter 1</p><p>The body.</p>';
-    expect(stripFrontMatter(html)).toBe(html);
   });
 
   it('parses chapter content without the preamble', () => {

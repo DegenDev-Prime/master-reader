@@ -13,7 +13,9 @@ import { prepareChapterHtml } from '@/sources/content/sanitize';
 import type { Chapter, Novel } from '@/models/novel';
 import type { Story, StoryPage } from '@/models/story';
 import { chapterRepository, type ChapterListItem } from '@/db/repositories/chapters';
+import { libraryRepository } from '@/db/repositories/library';
 import { novelRepository } from '@/db/repositories/novels';
+import { progressRepository } from '@/db/repositories/progress';
 import { storyUpdatesRepository } from '@/db/repositories/story-updates';
 import { chapterNumberFromRef } from '@/services/chapter-number';
 import { nowSeconds } from '@/utils/time';
@@ -38,8 +40,8 @@ export function novelFromStory(story: Story, chapterCount?: number | null): Nove
     authorName: story.authorName ?? null,
     description: story.description ?? null,
     coverUrl: story.coverUrl ?? null,
-    status: 'unknown',
-    genres: story.tags ?? [],
+    status: story.status ?? null,
+    genres: story.tags?.length ? story.tags : undefined,
     stats: Object.keys(stats).length > 0 ? stats : null,
     chapterCount: chapterCount ?? null,
     wordCount: story.wordCount ?? null,
@@ -83,11 +85,50 @@ async function fetchChapterRefs(
       index: page.index,
       title: page.title ?? '',
       url: null,
-      publishedAt: null,
+      volume: page.volume ?? null,
+      volumeIndex: page.volumeIndex ?? null,
+      wordCount: page.wordCount ?? null,
+      publishedAt: page.publishedAt ?? null,
     }));
   }
   if (!source.getChapterList) return [];
   return source.getChapterList(novelId);
+}
+
+/**
+ * When a source resolves an old id to a new library unit (Literotica series
+ * parts → the series), move the user's library card and reading progress to the
+ * canonical id instead of stranding them on the old row.
+ */
+async function repointLocalState(
+  sourceId: string,
+  fromId: string,
+  toId: string,
+  chapters: { id: string }[],
+): Promise<void> {
+  if (fromId === toId) return;
+
+  const entry = (await libraryRepository.listEntries()).find(
+    (item) => item.sourceId === sourceId && item.storyId === fromId,
+  );
+  if (entry) {
+    await libraryRepository.upsert({ ...entry, storyId: toId });
+    await libraryRepository.remove(sourceId, fromId);
+  }
+
+  const progress = await progressRepository.get(sourceId, fromId);
+  if (!progress || (await progressRepository.get(sourceId, toId))) return;
+
+  const known = new Set(chapters.map((chapter) => chapter.id));
+  const keep = progress.chapterId ? known.has(progress.chapterId) : false;
+  await progressRepository.save({
+    sourceId,
+    storyId: toId,
+    pageIndex: keep ? progress.pageIndex : 0,
+    chapterId: keep ? progress.chapterId : (chapters[0]?.id ?? null),
+    paragraphIndex: keep ? progress.paragraphIndex : null,
+    scrollPct: keep ? progress.scrollPct : 0,
+  });
 }
 
 export type NovelSyncResult = {
@@ -111,7 +152,10 @@ export async function syncNovel(sourceId: string, novelId: string): Promise<Nove
     });
   }
 
-  const refs = await fetchChapterRefs(source, novelId, details);
+  // A source may resolve a work id to a different library unit (Literotica
+  // turns a series part into the series). Everything below follows that id.
+  const canonicalId = details.id;
+  const refs = await fetchChapterRefs(source, canonicalId, details);
   if (refs.length === 0) {
     throw new SourceParseError({
       sourceId,
@@ -124,7 +168,7 @@ export async function syncNovel(sourceId: string, novelId: string): Promise<Nove
   const metadata = refs
     .map((ref) => ({
       sourceId,
-      novelId,
+      novelId: canonicalId,
       id: ref.id,
       position: ref.index,
       title: ref.title ?? '',
@@ -146,9 +190,11 @@ export async function syncNovel(sourceId: string, novelId: string): Promise<Nove
     chaptersSyncedAt: syncedAt,
   };
 
+  await repointLocalState(sourceId, novelId, canonicalId, metadata);
+
   // Chapters seen for the first time are the novel's updates.
   const known = new Set(
-    (await chapterRepository.listMetadata(sourceId, novelId)).map((chapter) => chapter.id),
+    (await chapterRepository.listMetadata(sourceId, canonicalId)).map((chapter) => chapter.id),
   );
   const fresh = metadata.filter((chapter) => !known.has(chapter.id));
 
@@ -156,7 +202,7 @@ export async function syncNovel(sourceId: string, novelId: string): Promise<Nove
   await chapterRepository.upsertMetadata(metadata);
   await chapterRepository.markOrphaned(
     sourceId,
-    novelId,
+    canonicalId,
     metadata.map((chapter) => chapter.id),
   );
 
@@ -164,7 +210,7 @@ export async function syncNovel(sourceId: string, novelId: string): Promise<Nove
     await storyUpdatesRepository.record(
       fresh.map((chapter) => ({
         sourceId,
-        novelId,
+        novelId: canonicalId,
         chapterId: chapter.id,
         chapterTitle: chapter.title,
       })),
@@ -175,15 +221,15 @@ export async function syncNovel(sourceId: string, novelId: string): Promise<Nove
     if (!page.content) continue;
     const chapterId = chapterIdForPage(page);
     const html = prepareChapterHtml(page.content, source.info.baseUrl);
-    await chapterRepository.setContent(sourceId, novelId, chapterId, {
+    await chapterRepository.setContent(sourceId, canonicalId, chapterId, {
       html,
       wordCount: wordCount(html),
     });
   }
 
-  await novelRepository.markSynced(sourceId, novelId, metadata.length, syncedAt);
-  const chapters = await chapterRepository.listMetadata(sourceId, novelId);
-  const saved = (await novelRepository.get(sourceId, novelId)) ?? novel;
+  await novelRepository.markSynced(sourceId, canonicalId, metadata.length, syncedAt);
+  const chapters = await chapterRepository.listMetadata(sourceId, canonicalId);
+  const saved = (await novelRepository.get(sourceId, canonicalId)) ?? novel;
   return { novel: saved, chapters, total: metadata.length };
 }
 
@@ -225,19 +271,20 @@ export async function getChapterHtml(
     throw new OfflineError('This chapter is not downloaded or cached yet.');
   }
 
-  const chapter = await chapterRepository.get(sourceId, novelId, chapterId);
+  let targetId = novelId;
+  const chapter = await chapterRepository.get(sourceId, targetId, chapterId);
   if (!chapter) {
-    await syncNovel(sourceId, novelId);
+    targetId = (await syncNovel(sourceId, targetId)).novel.id;
   }
 
   const source = getSource(sourceId);
   if (!source.getChapterContent) return null;
 
-  const raw = await source.getChapterContent(novelId, chapterId);
+  const raw = await source.getChapterContent(targetId, chapterId);
   if (raw == null) return null;
 
   const html = prepareChapterHtml(raw, source.info.baseUrl);
-  await chapterRepository.setContent(sourceId, novelId, chapterId, {
+  await chapterRepository.setContent(sourceId, targetId, chapterId, {
     html,
     wordCount: wordCount(html),
   });

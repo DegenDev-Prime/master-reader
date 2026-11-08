@@ -102,6 +102,10 @@ export interface Source {
   getPopular(request?: PageRequest): Promise<PagedResult<Story>>;
   getLatest(request?: PageRequest): Promise<PagedResult<Story>>;
   search(filters: SearchFilters, request?: PageRequest): Promise<PagedResult<Story>>;
+  /**
+   * `id` may be a provider alias (a slug, or one part of a series). The result
+   * carries the canonical library id; callers must use `details.id` from then on.
+   */
   getStory(id: string, options?: GetStoryOptions): Promise<StoryDetails | null>;
   getTags(): Promise<string[]>;
   getCategories(): Promise<Category[]>;

@@ -8,12 +8,16 @@ import {
   normalizeStoryUrl,
   parseConstants,
   parsePublishedAt,
+  parseSeriesChapterRefs,
   parseStoryDetails,
   parseTagList,
   parseV1List,
+  parseV3ChapterText,
   parseV3List,
+  parseV3SeriesStory,
   parseV3Story,
   parseV3TagStories,
+  parseV3Work,
   splitIntoPages,
   toBoolean,
   toNumber,
@@ -167,6 +171,49 @@ describe('parseV3Story', () => {
     expect(parsed.series?.items.map((item) => item.id)).toEqual(['101', '102']);
     expect(parsed.story.seriesId).toBe('55');
     expect(parsed.story.seriesPosition).toBe(0);
+  });
+});
+
+describe('series protocol', () => {
+  it('collapses a series work onto the series novel id', () => {
+    const { story, series } = parseV3Work(SOURCE, loadFixture('v3-story.json'));
+
+    expect(story.id).toBe('series-55');
+    expect(story.title).toBe('The Long Road');
+    expect(story.seriesId).toBe('55');
+    expect(story.seriesPosition).toBe(0);
+    expect(story.url).toBe('https://www.literotica.com/series/se/the-long-road');
+    expect(series?.items.map((item) => item.id)).toEqual(['101', '102']);
+  });
+
+  it('builds the series story from the series endpoint', () => {
+    const story = parseV3SeriesStory(SOURCE, loadFixture('v3-series.json'));
+
+    expect(story.id).toBe('series-55');
+    expect(story.title).toBe('The & Long Road');
+    expect(story.description).toBe('A road story told in parts.');
+    expect(story.authorName).toBe('AnneAuthor');
+    expect(story.views).toBe(3200);
+  });
+
+  it('lists works as ordered chapter refs', () => {
+    const refs = parseSeriesChapterRefs(loadFixture('v3-series-works.json'));
+
+    expect(refs.map((ref) => ref.id)).toEqual(['101', '102']);
+    expect(refs.map((ref) => ref.index)).toEqual([0, 1]);
+    expect(refs[0]).toMatchObject({
+      title: 'The & Long Road',
+      wordCount: 8000,
+    });
+  });
+
+  it('collapses every series work in a listing onto the series id', () => {
+    const result = parseV3List(SOURCE, loadFixture('v3-search-series.json'));
+    expect(result.stories.every((story) => story.id === 'series-55')).toBe(true);
+  });
+
+  it('reads the full chapter text', () => {
+    expect(parseV3ChapterText(loadFixture('v3-story.json'))).toContain('The road began');
   });
 });
 

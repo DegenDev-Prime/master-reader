@@ -79,11 +79,23 @@ describe('resolveStoryLink', () => {
     });
   });
 
+  it('resolves Literotica series links to the series novel id', () => {
+    expect(resolveStoryLink('https://www.literotica.com/series/se/the-tortuous-road-home')).toEqual(
+      {
+        kind: 'story',
+        sourceId: 'literotica',
+        storyId: 'series-the-tortuous-road-home',
+      },
+    );
+    expect(resolveStoryLink('https://literotica.com/series/dragon-heist')).toEqual({
+      kind: 'story',
+      sourceId: 'literotica',
+      storyId: 'series-dragon-heist',
+    });
+  });
+
   it('rejects bare hostnames without a story path', () => {
     expect(resolveStoryLink('literotica.com')).toEqual({ kind: 'unsupported' });
-    expect(resolveStoryLink('https://literotica.com/series/dragon-heist')).toEqual({
-      kind: 'unsupported',
-    });
   });
 
   it('reports unsupported for unknown hosts', () => {

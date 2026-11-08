@@ -1,4 +1,4 @@
-import type { Story, StoryPage } from '@/models/story';
+import type { Story } from '@/models/story';
 
 import { browserEvaluate, browserHtmlLoader } from '../browser-loader';
 import { normalizePage, toPagedResult } from '../provider-utils';
@@ -15,20 +15,28 @@ import type {
   SourceInfo,
   StoryDetails,
 } from '../types';
+import { SCRIBBLEHUB_BASE_URL, SCRIBBLEHUB_SOURCE_ID, SCRIBBLEHUB_WEB_URL } from './constants';
 import {
-  SCRIBBLEHUB_BASE_URL,
-  SCRIBBLEHUB_PATHS,
-  SCRIBBLEHUB_SOURCE_ID,
-  SCRIBBLEHUB_WEB_URL,
-} from './constants';
-import {
-  isCloudflareChallenge,
   listingToStory,
   parseChapterContent,
   parseChapterList,
   parseListing,
   parseSeries,
 } from './parsers';
+import {
+  chapterListExpression,
+  chapterUrl,
+  hasNextListingPage,
+  isCloudflareChallenge,
+  latestPath,
+  popularPath,
+  searchPath,
+  seriesIdFromInput,
+  seriesUrl,
+  SCRIBBLEHUB_CHAPTER_WAIT_SELECTOR,
+  SCRIBBLEHUB_SERIES_WAIT_SELECTOR,
+  SCRIBBLEHUB_USES_BROWSER,
+} from './protocol';
 
 export type ScribbleHubSourceOptions = {
   /** Overrides the network layer; defaults to the in-app thin browser. */
@@ -72,7 +80,7 @@ export class ScribbleHubSource implements Source {
     capabilities: ['popular', 'latest', 'search', 'categories'],
   };
 
-  readonly usesBrowser = true;
+  readonly usesBrowser = SCRIBBLEHUB_USES_BROWSER;
 
   private readonly loadHtml: HtmlLoader;
   private readonly evaluate: (url: string, expression: string) => Promise<string>;
@@ -84,45 +92,34 @@ export class ScribbleHubSource implements Source {
 
   async getPopular(request: PageRequest = {}): Promise<PagedResult<Story>> {
     const page = normalizePage(request.page);
-    const html = await this.read(this.url(SCRIBBLEHUB_PATHS.popular, { page }));
+    const html = await this.read(this.url(popularPath(page)));
     const items = parseListing(html);
-    return toPagedResult(items.map(listingToStory), page, items.length > 0);
+    return toPagedResult(items.map(listingToStory), page, hasNextListingPage(html, page));
   }
 
   async getLatest(request: PageRequest = {}): Promise<PagedResult<Story>> {
     const page = normalizePage(request.page);
-    const html = await this.read(this.url(SCRIBBLEHUB_PATHS.latest, { page }));
+    const html = await this.read(this.url(latestPath(page)));
     const items = parseListing(html);
-    return toPagedResult(items.map(listingToStory), page, items.length > 0);
+    return toPagedResult(items.map(listingToStory), page, hasNextListingPage(html, page));
   }
 
   async search(filters: SearchFilters, request: PageRequest = {}): Promise<PagedResult<Story>> {
     const page = normalizePage(request.page);
     const query = filters.query?.trim() ?? '';
     if (!query) return { items: [], page, hasNext: false, total: 0 };
-    const html = await this.read(this.url(SCRIBBLEHUB_PATHS.search, { search: query, page }));
+    const html = await this.read(this.url(searchPath(query, page)));
     const items = parseListing(html);
-    return toPagedResult(items.map(listingToStory), page, items.length > 0);
+    return toPagedResult(items.map(listingToStory), page, hasNextListingPage(html, page));
   }
 
-  async getStory(id: string, options: GetStoryOptions = {}): Promise<StoryDetails | null> {
-    const includeContent = options.includeContent ?? true;
-    const html = await this.read(this.url(`/series/${id}/`), { waitForSelector: '.fic_title' });
-    const story = parseSeries(id, html);
-    if (!includeContent) return story;
-
-    const chapters = await this.getChapterList(id);
-    const pages: StoryPage[] = chapters.map((chapter, index) => ({
-      sourceId: this.info.id,
-      storyId: id,
-      index,
-      title: chapter.title,
-      id: chapter.id,
-      content: null,
-      wordCount: null,
-    }));
-
-    return { ...story, pages };
+  /** Metadata only; chapters come from `getChapterList` and text per chapter. */
+  async getStory(id: string, _options: GetStoryOptions = {}): Promise<StoryDetails | null> {
+    const seriesId = seriesIdFromInput(id);
+    const html = await this.read(seriesUrl(seriesId), {
+      waitForSelector: SCRIBBLEHUB_SERIES_WAIT_SELECTOR,
+    });
+    return parseSeries(seriesId, html);
   }
 
   /**
@@ -131,26 +128,11 @@ export class ScribbleHubSource implements Source {
    * button; the expression below reuses that call.
    */
   async getChapterList(storyId: string): Promise<ChapterRef[]> {
-    const url = this.url(`/series/${storyId}/`);
-    const expression = `(function(){
-      var body = new URLSearchParams();
-      body.set('action', 'wi_getreleases_pagination');
-      body.set('pagenum', '-1');
-      body.set('mypostid', ${JSON.stringify(storyId)});
-      return fetch(${JSON.stringify(`${SCRIBBLEHUB_BASE_URL}${SCRIBBLEHUB_PATHS.ajax}`)}, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: body.toString()
-      }).then(function(response){ return response.text(); });
-    })()`;
+    const seriesId = seriesIdFromInput(storyId);
 
     let html: string;
     try {
-      html = await this.evaluate(url, expression);
+      html = await this.evaluate(seriesUrl(seriesId), chapterListExpression(seriesId));
     } catch (error) {
       throw new SourceError('Scribble Hub did not return its chapter list', {
         code: 'http',
@@ -170,14 +152,14 @@ export class ScribbleHubSource implements Source {
       id: chapter.id,
       index: chapter.index,
       title: chapter.title,
-      url: `${SCRIBBLEHUB_BASE_URL}${chapter.path}`,
+      url: chapterUrl(seriesId, chapter.id),
       publishedAt: chapter.publishedAt,
     }));
   }
 
   async getChapterContent(storyId: string, chapterId: string): Promise<string | null> {
-    const html = await this.read(this.url(`/read/${storyId}/chapter/${chapterId}/`), {
-      waitForSelector: '.chp_raw',
+    const html = await this.read(chapterUrl(storyId, chapterId), {
+      waitForSelector: SCRIBBLEHUB_CHAPTER_WAIT_SELECTOR,
     });
     const parsed = parseChapterContent(html);
     return parsed.content || null;
@@ -195,13 +177,8 @@ export class ScribbleHubSource implements Source {
     return false;
   }
 
-  private url(path: string, query?: Record<string, string | number>): string {
-    const base = `${SCRIBBLEHUB_BASE_URL}${path}`;
-    if (!query) return base;
-    const qs = Object.entries(query)
-      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
-      .join('&');
-    return `${base}?${qs}`;
+  private url(path: string): string {
+    return `${SCRIBBLEHUB_BASE_URL}${path}`;
   }
 
   private async read(url: string, options?: { waitForSelector?: string }): Promise<string> {

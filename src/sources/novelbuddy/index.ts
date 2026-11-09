@@ -3,6 +3,7 @@ import type { Story } from '@/models/story';
 import { normalizePage, toPagedResult } from '../provider-utils';
 import { HttpClient, NotFoundError, type FetchLike, type ResponseCacheStore } from '../transport';
 import type {
+  AuthorPage,
   Category,
   ChapterRef,
   GetStoryOptions,
@@ -21,7 +22,13 @@ import {
   NOVELBUDDY_SOURCE_ID,
   NOVELBUDDY_WEB_URL,
 } from './constants';
-import { parseChapterContent, parseChapters, parseListItem, parseTitle } from './parsers';
+import {
+  parseAuthorPage,
+  parseChapterContent,
+  parseChapters,
+  parseListItem,
+  parseTitle,
+} from './parsers';
 import { homePageAvailable } from './protocol';
 
 const DEFAULT_USER_AGENT =
@@ -54,7 +61,7 @@ export class NovelBuddySource implements Source {
     name: 'NovelBuddy',
     lang: 'en',
     baseUrl: NOVELBUDDY_WEB_URL,
-    capabilities: ['popular', 'latest', 'search', 'categories'],
+    capabilities: ['popular', 'latest', 'search', 'categories', 'authors'],
   };
 
   private readonly client: NovelBuddyClient;
@@ -129,6 +136,16 @@ export class NovelBuddySource implements Source {
       const detail = await this.client.chapter(storyId, chapterId);
       const parsed = parseChapterContent(detail);
       return parsed.content || null;
+    } catch (error) {
+      if (error instanceof NotFoundError) return null;
+      throw error;
+    }
+  }
+
+  async getAuthor(authorId: string, request: PageRequest = {}): Promise<AuthorPage | null> {
+    try {
+      const html = await this.client.authorPage(authorId, normalizePage(request.page));
+      return parseAuthorPage(html, authorId);
     } catch (error) {
       if (error instanceof NotFoundError) return null;
       throw error;

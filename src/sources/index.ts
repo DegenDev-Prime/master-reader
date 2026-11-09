@@ -1,5 +1,6 @@
 export type {
   AuthenticatedSource,
+  AuthorPage,
   BrowseKind,
   Category,
   ChapterRef,

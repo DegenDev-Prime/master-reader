@@ -1,4 +1,5 @@
 import { HttpClient, type QueryValue } from '../transport';
+import { authorApiPath, authorWorksApiPath } from './protocol';
 
 export type LiteroticaCredentials = {
   apikey?: string | null;
@@ -59,6 +60,14 @@ export class LiteroticaClient {
 
   seriesWorks(id: string): Promise<unknown> {
     return this.get(`${PATHS.series}/${encodeURIComponent(id)}/works`);
+  }
+
+  author(id: string): Promise<unknown> {
+    return this.get(authorApiPath(id));
+  }
+
+  authorStories(id: string, page: number): Promise<unknown> {
+    return this.get(authorWorksApiPath(id), { page });
   }
 
   topTags(params: { limit: number; period: string; periodCheck: boolean }): Promise<unknown> {

@@ -374,6 +374,20 @@
     "manageRules": "Manage rules",
     "previewBusy": "Previewing"
   },
+  "author": {
+    "title": "Author",
+    "openWeb": "Open author page",
+    "works": "{{count}} works",
+    "followers": "{{count}} followers",
+    "words": "{{count}} words",
+    "worksTitle": "Works",
+    "noWorksTitle": "No works listed",
+    "noWorksMessage": "This author has no works available from this source.",
+    "emptyTitle": "Author unavailable",
+    "emptyMessage": "This source did not return an author page.",
+    "errorTitle": "Could not load author",
+    "errorMessage": "Check your connection and try again."
+  },
   "player": {
     "nowListening": "Now listening",
     "collapse": "Collapse player",
@@ -689,6 +703,7 @@
       "search": "Search",
       "tags": "Tags",
       "categories": "Categories",
+      "authors": "Authors",
       "auth": "Account"
     }
   }

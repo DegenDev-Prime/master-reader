@@ -2,6 +2,7 @@ import type { Story } from '@/models/story';
 
 import { HttpClient, NotFoundError, type FetchLike, type ResponseCacheStore } from '../transport';
 import type {
+  AuthorPage,
   Category,
   ChapterRef,
   GetStoryOptions,
@@ -18,6 +19,8 @@ import { LiteroticaClient, type LiteroticaCredentials } from './client';
 import {
   parseSeriesChapterRefs,
   parseTagList,
+  parseV3Author,
+  parseV3AuthorWorks,
   parseV3ChapterText,
   parseV3List,
   parseV3SeriesStory,
@@ -75,7 +78,7 @@ export class LiteroticaSource implements Source {
     name: 'Literotica',
     lang: 'en',
     baseUrl: LITEROTICA_WEB_URL,
-    capabilities: ['popular', 'latest', 'search', 'tags', 'categories'],
+    capabilities: ['popular', 'latest', 'search', 'tags', 'categories', 'authors'],
   };
 
   private readonly client: LiteroticaClient;
@@ -146,6 +149,27 @@ export class LiteroticaSource implements Source {
       seriesId: story.seriesId ?? null,
       seriesTitle: story.seriesTitle ?? null,
       series,
+    };
+  }
+
+  /** Fetches the profile plus one page of the author's works. */
+  async getAuthor(authorId: string, request: PageRequest = {}): Promise<AuthorPage | null> {
+    const page = normalizePage(request.page);
+    const [profile, works] = await Promise.all([
+      this.client.author(authorId),
+      this.client.authorStories(authorId, page),
+    ]);
+    const author = parseV3Author(this.info.id, authorId, profile);
+    const result = parseV3AuthorWorks(this.info.id, works);
+
+    return {
+      author,
+      stories: {
+        items: uniqueById(result.stories),
+        page: result.page,
+        hasNext: result.hasNext,
+        total: result.total ?? undefined,
+      },
     };
   }
 

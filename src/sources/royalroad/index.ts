@@ -3,6 +3,7 @@ import type { Story, StoryPage } from '@/models/story';
 import { browserHtmlLoader } from '../browser-loader';
 import { normalizePage, toPagedResult } from '../provider-utils';
 import type {
+  AuthorPage,
   Category,
   ChapterRef,
   GetStoryOptions,
@@ -16,6 +17,7 @@ import type {
 } from '../types';
 import { ROYALROAD_CATEGORIES } from './categories';
 import {
+  authorUrl,
   chapterUrl,
   fictionUrl,
   listingUrl,
@@ -30,7 +32,7 @@ import {
   searchUrl,
   toChapterRefs,
 } from './protocol';
-import { parseChapterContent, parseFiction, parseListing } from './parsers';
+import { parseAuthorPage, parseChapterContent, parseFiction, parseListing } from './parsers';
 
 export type RoyalRoadSourceOptions = {
   /** Overrides the network layer; defaults to the in-app thin browser. */
@@ -48,7 +50,7 @@ export class RoyalRoadSource implements Source {
     name: 'Royal Road',
     lang: 'en',
     baseUrl: ROYALROAD_WEB_URL,
-    capabilities: ['popular', 'latest', 'search', 'categories'],
+    capabilities: ['popular', 'latest', 'search', 'categories', 'authors'],
   };
 
   readonly usesBrowser = ROYALROAD_USES_BROWSER;
@@ -107,6 +109,17 @@ export class RoyalRoadSource implements Source {
     }));
 
     return { ...story, pages };
+  }
+
+  async getAuthor(authorId: string, request: PageRequest = {}): Promise<AuthorPage | null> {
+    const id = authorId.trim();
+    if (!/^\d+$/.test(id)) return null;
+
+    const page = normalizePage(request.page);
+    const html = await readRoyalRoadHtml(this.loadHtml, authorUrl(id, page), {
+      waitForSelector: ROYALROAD_PAGE_SELECTOR,
+    });
+    return parseAuthorPage(id, html, page);
   }
 
   async getChapterContent(storyId: string, chapterId: string): Promise<string | null> {

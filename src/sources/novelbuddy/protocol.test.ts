@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  authorPath,
+  authorUrl,
   chapterPath,
   chaptersPath,
   homePageAvailable,
@@ -16,6 +18,12 @@ describe('novelbuddy protocol', () => {
     expect(titlePath('VYPGVZ8z')).toBe('/titles/VYPGVZ8z');
     expect(chaptersPath('VYPGVZ8z')).toBe('/titles/VYPGVZ8z/chapters');
     expect(chapterPath('VYPGVZ8z', '8nKabolY')).toBe('/titles/VYPGVZ8z/chapters/8nKabolY');
+  });
+
+  it('builds the author page path and URL', () => {
+    expect(authorPath('guiltythree')).toBe('/authors/guiltythree');
+    expect(authorUrl('guiltythree')).toBe('https://novelbuddy.me/authors/guiltythree');
+    expect(authorUrl('guiltythree', 2)).toBe('https://novelbuddy.me/authors/guiltythree?page=2');
   });
 
   it('treats the home blocks as a single page', () => {

@@ -23,6 +23,7 @@ const CAPABILITY_KEYS = {
   search: 'sources.capability.search',
   tags: 'sources.capability.tags',
   categories: 'sources.capability.categories',
+  authors: 'sources.capability.authors',
   auth: 'sources.capability.auth',
 } as const;
 

@@ -1,3 +1,5 @@
+import { NOVELFIRE_BASE_URL } from './constants';
+
 /**
  * NovelFire's model: a book slug is the library unit, every chapter is its own
  * numbered page, and chapter text may sit behind a mirror redirect.
@@ -6,6 +8,7 @@
  * - book metadata:  GET /book/{slug}
  * - chapter list:   GET /book/{slug}/chapters?page=N   (100 per page)
  * - chapter text:   GET /book/{slug}/chapter-{n} -> follow the mirror script
+ * - author profile: GET /author/{slug}?page=N
  */
 export const NOVELFIRE_MIRROR_URL = 'https://novelphoenix.com';
 
@@ -15,6 +18,14 @@ export function genrePath(genre: string): string {
 
 export function bookPath(slug: string): string {
   return `/book/${slug}`;
+}
+
+export function authorPath(slug: string): string {
+  return `/author/${slug}`;
+}
+
+export function authorUrl(slug: string): string {
+  return `${NOVELFIRE_BASE_URL}${authorPath(slug)}`;
 }
 
 export function chaptersPath(slug: string, page: number): string {

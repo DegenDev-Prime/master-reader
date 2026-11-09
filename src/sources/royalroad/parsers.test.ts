@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { loadTextFixture } from '@/test-utils/fixtures';
 
-import { parseChapterContent, parseFiction, parseListing } from './parsers';
+import { parseAuthorPage, parseChapterContent, parseFiction, parseListing } from './parsers';
 
 const listing = () => loadTextFixture('listing.html', 'royalroad');
 const book = () => loadTextFixture('book.html', 'royalroad');
+const author = () => loadTextFixture('author.html', 'royalroad');
 const chapter = () => loadTextFixture('chapter.html', 'royalroad');
 
 describe('parseListing', () => {
@@ -15,6 +16,7 @@ describe('parseListing', () => {
     expect(result.stories[0].id).toBe('21220');
     expect(result.stories[0].title).toBe('Mother of Learning');
     expect(result.stories[0].authorName).toBe('Nobody103');
+    expect(result.stories[0].authorId).toBe('15870');
     expect(result.stories[0].rating).toBe(4.85);
     expect(result.stories[0].coverUrl).toBe(
       'https://www.royalroadcdn.com/public/covers-large/21220-mother-of-learning.jpg',
@@ -68,6 +70,7 @@ describe('parseListing', () => {
     expect(story.title).toBe('Mother of Learning');
     expect(story.rating).toBe(4.83);
     expect(story.authorName).toBeNull();
+    expect(story.authorId).toBeNull();
     expect(story.coverUrl).toBe(
       'https://www.royalroadcdn.com/public/covers-full/21220-mother-of-learning.jpg?time=1637247458',
     );
@@ -81,11 +84,58 @@ describe('parseFiction', () => {
     const details = parseFiction('21220', book());
     expect(details.title).toBe('Mother of Learning');
     expect(details.authorName).toBe('Nobody103');
+    expect(details.authorId).toBe('15870');
     expect(details.rating).toBe(4.85);
     expect(details.votes).toBe(12345);
     expect(details.description).toContain('teenage mage');
     expect(details.tags).toEqual(['Fantasy', 'Time Loop']);
     expect(details.url).toBe('https://www.royalroad.com/fiction/21220');
+  });
+});
+
+describe('parseAuthorPage', () => {
+  it('maps the profile fields and the card-based fiction list', () => {
+    const result = parseAuthorPage('15870', author(), 1);
+    expect(result.author).toMatchObject({
+      sourceId: 'royalroad',
+      id: '15870',
+      name: 'Nobody103',
+      url: 'https://www.royalroad.com/profile/15870',
+      avatarUrl: 'https://www.royalroadcdn.com/public/avatars/15870-nobody103.jpg',
+      followers: 12345,
+      worksCount: 2,
+    });
+    expect(result.author.bio).toContain('Writing time loops');
+    expect(result.stories.items).toHaveLength(2);
+    expect(result.stories.items[0]).toMatchObject({
+      id: '21220',
+      title: 'Mother of Learning',
+      authorId: '15870',
+      authorName: 'Nobody103',
+    });
+    expect(result.stories.hasNext).toBe(true);
+    expect(parseAuthorPage('15870', author(), 2).stories.hasNext).toBe(false);
+  });
+
+  it('falls back to fiction anchors when the profile has no cards', () => {
+    const html = `
+      <html><head><title>Nobody103 | Royal Road</title></head><body>
+      <h1>Nobody103</h1>
+      <div class="profile-bio"><p>Writing time loops.</p></div>
+      <ul>
+        <li><a href="/fiction/21220/mother-of-learning">Mother of Learning</a></li>
+        <li><a href="/fiction/21220/mother-of-learning">Mother of Learning</a></li>
+        <li><a href="/fiction/31337/the-void">The Void</a></li>
+      </ul>
+      </body></html>`;
+    const result = parseAuthorPage('15870', html, 1);
+    expect(result.author.name).toBe('Nobody103');
+    expect(result.stories.items.map((story) => story.id)).toEqual(['21220', '31337']);
+    expect(result.stories.items[0].authorId).toBe('15870');
+    expect(result.stories.items[0].url).toBe(
+      'https://www.royalroad.com/fiction/21220/mother-of-learning',
+    );
+    expect(result.stories.hasNext).toBe(false);
   });
 });
 

@@ -8,6 +8,8 @@
  * - latest:           GET /latest-series/?pg=N
  * - search:           GET /series-finder/?sf=1&sh={query}&pg=N
  * - series metadata:  GET /series/{id}/
+ * - author profile:   GET /profile/{id}/?sp=N (series tab; profile data is also
+ *                     on the main tab)
  * - chapter list:     GET /series/{id}/ then POST /wp-admin/admin-ajax.php with
  *                     action=wi_getreleases_pagination, pagenum=-1, mypostid={id}
  * - chapter text:     GET /read/{id}/chapter/{chapterId}/
@@ -39,6 +41,37 @@ export function seriesUrl(id: string): string {
   return `${SCRIBBLEHUB_BASE_URL}${seriesPath(id)}`;
 }
 
+/** Accepts a profile URL, a bare id, or an id with a slug. */
+export function authorIdFromHref(href: string | null | undefined): string | null {
+  return /\/profile\/(\d+)(?:[/?#]|$)/i.exec(href ?? '')?.[1] ?? null;
+}
+
+export function authorIdFromInput(value: string): string {
+  const input = value.trim();
+  return authorIdFromHref(input) ?? /^(\d+)/.exec(input)?.[1] ?? input;
+}
+
+/** Canonical profile path. Page 2+ uses the site's `page` query. */
+export function authorPath(id: string, page = 1): string {
+  const authorId = authorIdFromInput(id);
+  const suffix = page > 1 ? `?page=${page}` : '';
+  return `/profile/${encodeURIComponent(authorId)}/${suffix}`;
+}
+
+export function authorUrl(id: string, page = 1): string {
+  return `${SCRIBBLEHUB_BASE_URL}${authorPath(id, page)}`;
+}
+
+/** The series tab is server-rendered; `sp` is its page number. */
+export function authorSeriesPath(id: string, page = 1): string {
+  const authorId = authorIdFromInput(id);
+  return `/profile/${encodeURIComponent(authorId)}/?sp=${Math.max(1, page)}`;
+}
+
+export function authorSeriesUrl(id: string, page = 1): string {
+  return `${SCRIBBLEHUB_BASE_URL}${authorSeriesPath(id, page)}`;
+}
+
 export function popularPath(page: number): string {
   return `/series-finder/?sf=1&sort=ratings&order=desc&pg=${page}`;
 }
@@ -54,6 +87,11 @@ export function searchPath(query: string, page: number): string {
 /** The listings paginate with `pg`; page links keep filters in the query. */
 export function hasNextListingPage(html: string, page: number): boolean {
   return new RegExp(`[?&](?:amp;)?pg=${page + 1}(?:[&#"']|$)`, 'i').test(html);
+}
+
+/** Profile tabs paginate with `sp` (or `page` on some links). */
+export function hasNextAuthorPage(html: string, page: number): boolean {
+  return new RegExp(`[?&](?:amp;)?(?:sp|page)=${page + 1}(?:[&#"']|$)`, 'i').test(html);
 }
 
 export function chapterIdFromHref(href: string): string | null {

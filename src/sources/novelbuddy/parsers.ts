@@ -1,3 +1,4 @@
+import type { Author } from '@/models/author';
 import type { Story } from '@/models/story';
 import { decodeHtmlEntities, estimateWordCount, htmlToPlainText } from '@/utils/html';
 
@@ -6,10 +7,11 @@ import type {
   NovelBuddyChapter,
   NovelBuddyChapterDetail,
   NovelBuddyListItem,
+  NovelBuddyPagination,
   NovelBuddyTitle,
 } from './client';
-import { orderChapters, siteUrl, stripFrontMatter } from './protocol';
-import type { StoryDetails } from '../types';
+import { authorUrl, orderChapters, siteUrl, stripFrontMatter } from './protocol';
+import type { AuthorPage, StoryDetails } from '../types';
 
 /** Summaries arrive as HTML fragments; the reader wants plain text. */
 function summaryToText(summary?: string | null): string | null {
@@ -23,6 +25,7 @@ export function parseListItem(item: NovelBuddyListItem): Story {
     sourceId: SOURCE_ID,
     id: item.id,
     title: item.name,
+    authorId: item.authors?.[0]?.slug ?? null,
     authorName: null,
     description: summaryToText(item.summary),
     coverUrl: siteUrl(item.cover),
@@ -45,6 +48,7 @@ export function parseTitle(title: NovelBuddyTitle): StoryDetails {
     sourceId: SOURCE_ID,
     id: title.id,
     title: title.name,
+    authorId: title.authors?.[0]?.slug ?? null,
     authorName: title.authors?.[0]?.name ?? null,
     description: summaryToText(title.summary),
     coverUrl: siteUrl(title.cover),
@@ -87,4 +91,77 @@ export function parseChapterContent(detail: NovelBuddyChapterDetail): {
   const content = stripFrontMatter(detail.content ?? '');
   const text = decodeHtmlEntities(content.replace(/<[^>]+>/g, ' '));
   return { content, wordCount: detail.word_count ?? estimateWordCount(text) };
+}
+
+type NovelBuddyAuthorData = {
+  props?: {
+    pageProps?: {
+      slug?: string | null;
+      items?: NovelBuddyListItem[] | null;
+      pagination?: NovelBuddyPagination | null;
+    } | null;
+  } | null;
+};
+
+function readNextData(html: string): NovelBuddyAuthorData | null {
+  const match = /<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i.exec(html);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]) as NovelBuddyAuthorData;
+  } catch {
+    return null;
+  }
+}
+
+function humanizeSlug(slug: string): string {
+  return slug
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function authorName(html: string, slug: string): string {
+  const meta = (html.match(/<meta\b[^>]*>/gi) ?? []).find((tag) =>
+    /property=["']og:title["']/i.test(tag),
+  );
+  const content = meta ? /content=["']([^"']*)["']/i.exec(meta)?.[1] : undefined;
+  const title = content ? decodeHtmlEntities(content) : '';
+  const name = title.replace(/\s*-\s*Novels by Author\s*-\s*NovelBuddy\s*$/i, '').trim();
+  return name || humanizeSlug(slug);
+}
+
+export function parseAuthorPage(html: string, fallbackSlug?: string): AuthorPage | null {
+  const pageProps = readNextData(html)?.props?.pageProps;
+  const slug = pageProps?.slug?.trim() || fallbackSlug?.trim();
+  if (!pageProps || !slug) return null;
+
+  const name = authorName(html, slug);
+  const author: Author = {
+    sourceId: SOURCE_ID,
+    id: slug,
+    name,
+    url: authorUrl(slug),
+    avatarUrl: null,
+    bio: null,
+    worksCount: pageProps?.pagination?.total ?? null,
+    fetchedAt: Math.floor(Date.now() / 1000),
+    raw: null,
+  };
+  const stories = (pageProps?.items ?? []).map((item) => ({
+    ...parseListItem(item),
+    authorId: slug,
+    authorName: name,
+  }));
+  const pagination = pageProps?.pagination;
+
+  return {
+    author,
+    stories: {
+      items: stories,
+      page: pagination?.page ?? 1,
+      hasNext: pagination?.has_next ?? false,
+      total: pagination?.total ?? stories.length,
+    },
+  };
 }

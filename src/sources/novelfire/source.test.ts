@@ -4,12 +4,14 @@ import { loadTextFixture } from '@/test-utils/fixtures';
 import { HttpClient, type FetchLike } from '../transport';
 import { NovelFireSource } from './index';
 
+const author = () => loadTextFixture('author.html', 'novelfire');
 const listing = () => loadTextFixture('listing.html', 'novelfire');
 const book = () => loadTextFixture('book.html', 'novelfire');
 const chapters = () => loadTextFixture('chapters.html', 'novelfire');
 const chapter = () => loadTextFixture('chapter.html', 'novelfire');
 
 const routes: Record<string, () => string> = {
+  '/author/guiltythree': author,
   '/book/shadow-slave/chapters': chapters,
   '/book/shadow-slave/chapter-': chapter,
   '/book/shadow-slave': book,
@@ -52,7 +54,7 @@ describe('NovelFireSource', () => {
     const { source } = createSource();
     expect(source.info.id).toBe('novelfire');
     expect(source.info.capabilities).toEqual(
-      expect.arrayContaining(['popular', 'latest', 'search', 'categories']),
+      expect.arrayContaining(['popular', 'latest', 'search', 'categories', 'authors']),
     );
     expect(source.isLoggedIn()).toBe(false);
   });
@@ -113,6 +115,43 @@ describe('NovelFireSource', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toContain('/book/shadow-slave');
     expect(calls[0]).not.toContain('/chapters');
+  });
+
+  it('fetches an author page', async () => {
+    const { source, calls } = createSource();
+    const result = await source.getAuthor('guiltythree');
+
+    expect(result?.author).toMatchObject({
+      sourceId: 'novelfire',
+      id: 'guiltythree',
+      name: 'Guiltythree',
+      url: 'https://novelfire.net/author/guiltythree',
+      bio: null,
+      avatarUrl: null,
+    });
+    expect(result?.stories.items.map((story) => story.id)).toEqual([
+      'shadow-slave',
+      'free-fall-pyramid-of-gold',
+    ]);
+    expect(result?.stories.items[0].authorId).toBe('guiltythree');
+    expect(result?.stories.page).toBe(1);
+    expect(result?.stories.hasNext).toBe(true);
+    expect(calls[0]).toContain('/author/guiltythree');
+  });
+
+  it('requests the author page number', async () => {
+    const { source, calls } = createSource();
+    const result = await source.getAuthor('guiltythree', { page: 2 });
+
+    expect(result?.stories.page).toBe(2);
+    expect(result?.stories.hasNext).toBe(false);
+    expect(calls[0]).toContain('page=2');
+  });
+
+  it('returns null for an empty author id without a request', async () => {
+    const { source, calls } = createSource();
+    await expect(source.getAuthor('  ')).resolves.toBeNull();
+    expect(calls).toHaveLength(0);
   });
 
   it('lists every chapter across the chapter-list pages', async () => {

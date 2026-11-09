@@ -1,0 +1,99 @@
+{
+  "current_page": 1,
+  "last_page": 1,
+  "total": 3,
+  "per_page": 50,
+  "data": [
+    {
+      "id": 401,
+      "title": "Standalone &amp; Free",
+      "description": "A standalone tale.",
+      "category_info": { "type": "story", "pageUrl": "romance" },
+      "category": 15,
+      "language": 1,
+      "date_approve": "02/03/2022",
+      "rate_all": 4.1,
+      "view_count": 700,
+      "url": "standalone-free",
+      "is_hot": false,
+      "is_new": false,
+      "writers_pick": 0,
+      "contest_winner": 0,
+      "enable_comments": 1,
+      "allow_vote": 1,
+      "author": { "userid": 902, "username": "AnneAuthor" },
+      "series": [],
+      "words_count": 1500
+    },
+    {
+      "id": 511,
+      "title": "The Other Road",
+      "description": "The first part.",
+      "category_info": { "type": "story", "pageUrl": "romance" },
+      "category": 15,
+      "language": 1,
+      "date_approve": "03/04/2022",
+      "rate_all": 4.6,
+      "view_count": 1200,
+      "url": "the-other-road",
+      "is_hot": true,
+      "is_new": false,
+      "author": { "userid": 902, "username": "AnneAuthor" },
+      "series": {
+        "meta": { "id": 88, "title": "The Other Road", "url": "the-other-road" },
+        "items": [
+          {
+            "id": 511,
+            "title": "The Other Road",
+            "url": "the-other-road",
+            "category": 15,
+            "category_info": { "pageUrl": "romance" }
+          },
+          {
+            "id": 512,
+            "title": "The Other Road II",
+            "url": "the-other-road-ii",
+            "category": 15,
+            "category_info": { "pageUrl": "romance" }
+          }
+        ]
+      },
+      "words_count": 8000
+    },
+    {
+      "id": 512,
+      "title": "The Other Road II",
+      "description": "The second part.",
+      "category_info": { "type": "story", "pageUrl": "romance" },
+      "category": 15,
+      "language": 1,
+      "date_approve": "04/05/2022",
+      "rate_all": 4.7,
+      "view_count": 900,
+      "url": "the-other-road-ii",
+      "is_hot": false,
+      "is_new": false,
+      "author": { "userid": 902, "username": "AnneAuthor" },
+      "series": {
+        "meta": { "id": 88, "title": "The Other Road", "url": "the-other-road" },
+        "items": [
+          {
+            "id": 511,
+            "title": "The Other Road",
+            "url": "the-other-road",
+            "category": 15,
+            "category_info": { "pageUrl": "romance" }
+          },
+          {
+            "id": 512,
+            "title": "The Other Road II",
+            "url": "the-other-road-ii",
+            "category": 15,
+            "category_info": { "pageUrl": "romance" }
+          }
+        ]
+      },
+      "words_count": 7800
+    }
+  ]
+}

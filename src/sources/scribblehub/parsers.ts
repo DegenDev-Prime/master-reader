@@ -1,9 +1,18 @@
+import type { Author } from '@/models/author';
 import type { Story } from '@/models/story';
 import { decodeHtmlEntities, estimateWordCount } from '@/utils/html';
-import { cleanText, extractElementById, getAttribute, stripTags } from '@/utils/html-parse';
+import {
+  cleanText,
+  extractElementByClass,
+  extractElementById,
+  getAttribute,
+  stripTags,
+} from '@/utils/html-parse';
 
 import { SCRIBBLEHUB_BASE_URL, SCRIBBLEHUB_SOURCE_ID as SOURCE_ID } from './constants';
 import {
+  authorIdFromHref,
+  authorIdFromInput,
   chapterIdFromHref,
   parseChapterPublishedAt,
   seriesIdFromInput,
@@ -26,6 +35,7 @@ export type ScribbleHubListingItem = {
   title: string;
   url: string;
   coverUrl: string | null;
+  authorId: string | null;
   authorName: string | null;
   rating: number | null;
   views: number | null;
@@ -78,7 +88,7 @@ export function parseListingItem(chunk: string): ScribbleHubListingItem | null {
   const statsText = stats ? stats[1] : '';
 
   const image = /<img[^>]+src="([^"]+)"/i.exec(chunk);
-  const author = /Author:\s*<span class="a_un_st"><a[^>]*>([\s\S]*?)<\/a>/i.exec(statsText);
+  const author = /Author:\s*<span class="a_un_st"><a([^>]*)>([\s\S]*?)<\/a>/i.exec(statsText);
   const rating = /\(([\d.]+)\)<\/span>/i.exec(chunk);
   const updated = /Updated:\s*([^,<]+)/i.exec(statsText);
 
@@ -98,7 +108,8 @@ export function parseListingItem(chunk: string): ScribbleHubListingItem | null {
     title,
     url: link[1],
     coverUrl: image ? absolute(image[1]) : null,
-    authorName: author ? stripTags(author[1]) || null : null,
+    authorId: author ? authorIdFromHref(getAttribute(author[1], 'href')) : null,
+    authorName: author ? stripTags(author[2]) || null : null,
     rating: rating ? Number(rating[1]) : null,
     views: parseStat(statsText, 'Views'),
     favorites: parseStat(statsText, 'Favorites'),
@@ -115,6 +126,7 @@ export function listingToStory(item: ScribbleHubListingItem): Story {
     sourceId: SOURCE_ID,
     id: seriesIdFromInput(item.id),
     title: item.title,
+    authorId: item.authorId,
     authorName: item.authorName,
     description: item.description,
     coverUrl: item.coverUrl,
@@ -150,8 +162,9 @@ export function parseSeries(id: string, html: string): StoryDetails {
     cleanText(/<meta property="og:title" content="([^"]*)"/i.exec(html)?.[1] ?? '') ||
     seriesId;
 
-  const author =
-    stripTags(/<span class="auth_name_fic">([\s\S]*?)<\/span>/i.exec(html)?.[1] ?? '') || null;
+  const author = /<a\b([^>]*)>\s*<span class="auth_name_fic">([\s\S]*?)<\/span>/i.exec(html);
+  const authorName = author ? stripTags(author[2]) || null : null;
+  const authorId = author ? authorIdFromHref(getAttribute(author[1], 'href')) : null;
 
   const description = cleanText(
     /<div class="wi_fic_desc"[^>]*>([\s\S]*?)<\/div>\s*<div/i.exec(html)?.[1] ?? '',
@@ -179,7 +192,8 @@ export function parseSeries(id: string, html: string): StoryDetails {
     sourceId: SOURCE_ID,
     id: seriesId,
     title,
-    authorName: author,
+    authorId,
+    authorName,
     description: description || null,
     coverUrl: cover ? absolute(cover) : null,
     rating: Number.isFinite(rating) ? rating : null,
@@ -193,6 +207,175 @@ export function parseSeries(id: string, html: string): StoryDetails {
     seriesTitle: null,
     series: null,
     raw: null,
+  };
+}
+
+function metaContent(html: string, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const tag = new RegExp(`<meta\\b[^>]*(?:name|property)\\s*=\\s*["']${key}["'][^>]*>`, 'i').exec(
+      html,
+    )?.[0];
+    const content = tag ? getAttribute(tag, 'content') : null;
+    if (content) return content;
+  }
+  return null;
+}
+
+function authorNameFromHtml(html: string, fallback: string): string {
+  const headingBlock =
+    extractElementByClass(html, 'breadcrumb') ?? extractElementByClass(html, 'profile_name') ?? '';
+  const headingText = stripTags(headingBlock);
+  const breadcrumb = /\/\s*Profile\s*\/\s*([^/]+)/i.exec(headingText)?.[1]?.trim();
+  const headingName = /\/\s*Profile/i.test(headingText) ? '' : headingText;
+  const h1 = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html)?.[1];
+  const title = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1];
+  const metaTitle = metaContent(html, ['og:title', 'twitter:title']) ?? '';
+  const description = metaContent(html, ['og:description', 'twitter:description']) ?? '';
+
+  const candidates = [
+    breadcrumb ?? '',
+    headingName,
+    h1 ? stripTags(h1) : '',
+    title ? stripTags(title).replace(/\s*['’]s Profile\s*\|[\s\S]*$/i, '') : '',
+    metaTitle ? stripTags(metaTitle).replace(/\s*['’]s Profile\s*\|[\s\S]*$/i, '') : '',
+    description.split(/\s*['’]s\s/)[0] ?? '',
+  ];
+  return candidates.find((value) => value && !/^scribble hub$/i.test(value)) || fallback;
+}
+
+function authorBio(html: string): string | null {
+  const block =
+    extractElementByClass(html, 'user_bio_profile') ??
+    /<div[^>]*class="[^"]*\bprofile_bio\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(html)?.[1] ??
+    null;
+  if (block) {
+    const paragraphs = [...block.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+      .map((match) => stripTags(match[1]))
+      .filter(Boolean);
+    const text = paragraphs.length ? paragraphs.join('\n\n') : stripTags(block);
+    if (text) return text;
+  }
+  return (
+    metaContent(html, ['description'])
+      ?.replace(/\s*['’]s Profile\s*$/i, '')
+      .replace(/\s*\|[\s\S]*$/, '') ?? null
+  );
+}
+
+function authorTableRows(html: string): string[][] {
+  const rows: string[][] = [];
+  for (const match of html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...match[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+      .map((cell) => stripTags(cell[1]).replace(/:$/, '').trim())
+      .filter(Boolean);
+    if (cells.length >= 2) rows.push(cells);
+  }
+  return rows;
+}
+
+function authorStat(html: string, rows: string[][], label: string): number | null {
+  const row = rows.find((cells) => cells[0]?.toLowerCase() === label.toLowerCase());
+  if (row) return parseCount(row[1]);
+  const match = new RegExp(`${label}\\s*:?\\s*(?:<[^>]+>\\s*)*([\\d.,]+\\s*[km]?)`, 'i').exec(html);
+  return parseCount(match?.[1] ?? null);
+}
+
+function authorAvatar(html: string): string | null {
+  const meta = metaContent(html, ['og:image', 'twitter:image']);
+  if (meta) return absolute(meta);
+  const tag = /<img\b[^>]*class=["'][^"']*\bavatar\b[^"']*["'][^>]*>/i.exec(html)?.[0];
+  const src = tag ? getAttribute(tag, 'src') : null;
+  return src ? absolute(src) : null;
+}
+
+export type ScribbleHubAuthorSeries = {
+  id: string;
+  title: string;
+  url: string;
+};
+
+function seriesLinksInChunk(chunk: string): ScribbleHubAuthorSeries[] {
+  const titled = [
+    extractElementByClass(chunk, 'search_title'),
+    extractElementByClass(chunk, 'search_img'),
+  ].filter((value): value is string => typeof value === 'string');
+  const sources = titled.length > 0 ? titled : [chunk];
+
+  const items: ScribbleHubAuthorSeries[] = [];
+  for (const source of sources) {
+    for (const match of source.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+      const href = getAttribute(match[1], 'href');
+      const id = /\/series\/(\d+)(?:[/?#]|$)/i.exec(href ?? '')?.[1];
+      if (!id) continue;
+      const image = /<img\b[^>]*>/i.exec(match[2])?.[0];
+      const title =
+        stripTags(match[2]) ||
+        getAttribute(match[1], 'title') ||
+        (image ? getAttribute(image, 'alt') : null);
+      if (!title) continue;
+      items.push({ id, title, url: absolute(href) ?? seriesUrl(id) });
+    }
+  }
+  return items;
+}
+
+/** The profile series tab renders the same cards as search listings. */
+export function parseAuthorSeries(html: string): ScribbleHubAuthorSeries[] {
+  const container =
+    extractElementByClass(html, 'p_series_tab') ??
+    extractElementByClass(html, 'p_load_series') ??
+    html;
+  const cards = [
+    ...container.matchAll(
+      /<div class="search_main_box[^"]*">([\s\S]*?)(?=<div class="search_main_box|$)/gi,
+    ),
+  ].map((match) => match[1]);
+
+  const items: ScribbleHubAuthorSeries[] = [];
+  const seen = new Set<string>();
+  const hasComments =
+    /class=["'][^"']*(?:p_profile_post|profile_comments|p_messages_recent|profile_reply)[^"']*["']/i.test(
+      html,
+    );
+  const chunks = cards.length > 0 ? cards : container === html && !hasComments ? [html] : [];
+  for (const chunk of chunks) {
+    for (const item of seriesLinksInChunk(chunk)) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      items.push(item);
+    }
+  }
+  return items;
+}
+
+export function parseAuthor(authorId: string, html: string): Author {
+  const id = authorIdFromInput(authorId);
+  const rows = authorTableRows(html);
+  return {
+    sourceId: SOURCE_ID,
+    id,
+    name: authorNameFromHtml(html, id),
+    url: `${SCRIBBLEHUB_BASE_URL}/profile/${encodeURIComponent(id)}/`,
+    avatarUrl: authorAvatar(html),
+    bio: authorBio(html),
+    followers: authorStat(html, rows, 'Followers'),
+    worksCount: authorStat(html, rows, 'Series'),
+    wordCount: authorStat(html, rows, 'Total Words'),
+    fetchedAt: Math.floor(Date.now() / 1000),
+    raw: null,
+  };
+}
+
+export function authorSeriesToStory(item: ScribbleHubAuthorSeries, author: Author): Story {
+  return {
+    sourceId: SOURCE_ID,
+    id: item.id,
+    title: item.title,
+    authorId: author.id,
+    authorName: author.name,
+    url: item.url,
+    flags: {},
+    fetchedAt: Math.floor(Date.now() / 1000),
   };
 }
 

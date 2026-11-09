@@ -12,6 +12,8 @@ import {
   parseStoryDetails,
   parseTagList,
   parseV1List,
+  parseV3Author,
+  parseV3AuthorWorks,
   parseV3ChapterText,
   parseV3List,
   parseV3SeriesStory,
@@ -146,6 +148,62 @@ describe('parseV3TagStories', () => {
     expect(result.stories[0].title).toBe('Tagged Tale');
     expect(result.stories[0].authorName).toBe('Dana');
     expect(result.stories[0].publishedAt).toBe(Date.UTC(2020, 11, 31) / 1000);
+  });
+});
+
+describe('author pages', () => {
+  it('maps the profile payload', () => {
+    const author = parseV3Author(SOURCE, '902', loadFixture('v3-author.json'));
+
+    expect(author).toMatchObject({
+      sourceId: SOURCE,
+      id: '902',
+      name: 'AnneAuthor',
+      url: 'https://www.literotica.com/authors/AnneAuthor',
+      avatarUrl: 'https://images.literotica.com/anne-author.jpg',
+      bio: 'Writes & reads long roads.',
+      followers: 42,
+      worksCount: 7,
+      wordCount: 12345,
+    });
+  });
+
+  it('maps one page of works and pagination', () => {
+    const result = parseV3AuthorWorks(SOURCE, loadFixture('v3-author-stories.json'));
+
+    expect(result).toMatchObject({ page: 1, hasNext: false, total: 3 });
+    expect(result.stories[0]).toMatchObject({
+      id: '401',
+      title: 'Standalone & Free',
+      authorId: '902',
+      wordCount: 1500,
+    });
+  });
+
+  it('canonicalises series works without changing their series id', () => {
+    const result = parseV3AuthorWorks(SOURCE, loadFixture('v3-author-stories.json'));
+    const seriesWorks = result.stories.filter((story) => story.id === 'series-88');
+
+    expect(seriesWorks).toHaveLength(2);
+    expect(seriesWorks[0]).toMatchObject({
+      title: 'The Other Road',
+      seriesId: '88',
+      seriesTitle: 'The Other Road',
+      seriesPosition: 0,
+    });
+    expect(seriesWorks[1].seriesPosition).toBe(1);
+  });
+
+  it('uses last_page for hasNext and current_page for the page', () => {
+    const payload = {
+      ...loadFixture<Record<string, unknown>>('v3-author-stories.json'),
+      current_page: 2,
+      last_page: 3,
+    };
+    const result = parseV3AuthorWorks(SOURCE, payload);
+
+    expect(result.page).toBe(2);
+    expect(result.hasNext).toBe(true);
   });
 });
 

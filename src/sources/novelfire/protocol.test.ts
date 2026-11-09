@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  authorPath,
+  authorUrl,
   chapterIdFromNumber,
   chapterNumberFromId,
   chapterRedirectTarget,
@@ -8,6 +10,10 @@ import {
 } from './protocol';
 
 describe('novelfire protocol', () => {
+  it('builds author profile paths and urls', () => {
+    expect(authorPath('guiltythree')).toBe('/author/guiltythree');
+    expect(authorUrl('guiltythree')).toBe('https://novelfire.net/author/guiltythree');
+  });
   it('maps numeric chapter ids', () => {
     expect(chapterIdFromNumber(12)).toBe('12');
     expect(chapterNumberFromId('12')).toBe(12);

@@ -1,6 +1,7 @@
 export { settingsRepository } from './settings';
 export { sourcesRepository } from './sources';
 export { storiesRepository } from './stories';
+export { authorsRepository } from './authors';
 export type { SourceRow, NewSourceRow } from './sources';
 export { libraryRepository } from './library';
 export type { LibraryStory } from './library';

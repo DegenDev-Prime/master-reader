@@ -11,6 +11,7 @@ import {
   search,
   type BrowseKind,
 } from '@/services/catalog';
+import { getAuthorPage } from '@/services/author-catalog';
 import { loadProgress, listAllProgress } from '@/services/reading';
 import { getSource } from '@/services/source-manager';
 
@@ -19,6 +20,7 @@ export const queryKeys = {
     ['browse', sourceId, kind, category ?? null] as const,
   search: (sourceId: string, filters: SearchFilters) => ['search', sourceId, filters] as const,
   story: (sourceId: string, id: string) => ['story', sourceId, id] as const,
+  author: (sourceId: string, id: string) => ['author', sourceId, id] as const,
   pages: (sourceId: string, id: string) => ['pages', sourceId, id] as const,
   pageContent: (sourceId: string, id: string, index: number) =>
     ['page-content', sourceId, id, index] as const,
@@ -52,6 +54,16 @@ export function useStoryDetails(sourceId: string, id: string) {
     queryKey: queryKeys.story(sourceId, id),
     queryFn: () => getStoryDetails(sourceId, id, { includeContent: false }),
     enabled: Boolean(sourceId && id),
+  });
+}
+
+export function useAuthorPage(sourceId: string, authorId: string) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.author(sourceId, authorId),
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => getAuthorPage(sourceId, authorId, { page: pageParam }),
+    getNextPageParam: (last) => (last?.stories.hasNext ? last.stories.page + 1 : undefined),
+    enabled: Boolean(sourceId && authorId),
   });
 }
 

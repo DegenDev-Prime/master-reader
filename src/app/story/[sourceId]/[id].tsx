@@ -39,6 +39,7 @@ import { useLibraryStore } from '@/stores/library';
 import { withAlpha } from '@/utils/color';
 import { useTheme } from '@/hooks/use-theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { openAuthor } from '@/navigation/routes';
 import { useBackToParent, useOpenTarget } from '@/navigation/use-parent-back';
 
 const STATUS_KEYS: Record<NovelStatus, string> = {
@@ -356,9 +357,21 @@ export default function StoryScreen() {
             <ThemedText type="title2" accessibilityRole="header">
               {novel.title}
             </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              {novel.authorName ?? t('story.unknownAuthor')}
-            </ThemedText>
+            {novel.authorId && getSource(sourceId).getAuthor ? (
+              <Pressable
+                onPress={() => openAuthor(sourceId, novel.authorId ?? '')}
+                accessibilityRole="link"
+                accessibilityLabel={novel.authorName ?? t('story.unknownAuthor')}
+              >
+                <ThemedText type="small" themeColor="primary">
+                  {novel.authorName ?? t('story.unknownAuthor')}
+                </ThemedText>
+              </Pressable>
+            ) : (
+              <ThemedText type="small" themeColor="textSecondary">
+                {novel.authorName ?? t('story.unknownAuthor')}
+              </ThemedText>
+            )}
             <ThemedText type="small" themeColor="textMuted">
               {[
                 novel.status && novel.status !== 'unknown' ? t(statusLabel) : null,

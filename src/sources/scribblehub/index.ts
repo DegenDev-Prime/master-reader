@@ -4,6 +4,7 @@ import { browserEvaluate, browserHtmlLoader } from '../browser-loader';
 import { normalizePage, toPagedResult } from '../provider-utils';
 import { SourceError } from '../transport';
 import type {
+  AuthorPage,
   Category,
   ChapterRef,
   GetStoryOptions,
@@ -17,15 +18,20 @@ import type {
 } from '../types';
 import { SCRIBBLEHUB_BASE_URL, SCRIBBLEHUB_SOURCE_ID, SCRIBBLEHUB_WEB_URL } from './constants';
 import {
+  authorSeriesToStory,
   listingToStory,
+  parseAuthor,
+  parseAuthorSeries,
   parseChapterContent,
   parseChapterList,
   parseListing,
   parseSeries,
 } from './parsers';
 import {
+  authorSeriesUrl,
   chapterListExpression,
   chapterUrl,
+  hasNextAuthorPage,
   hasNextListingPage,
   isCloudflareChallenge,
   latestPath,
@@ -77,7 +83,7 @@ export class ScribbleHubSource implements Source {
     name: 'Scribble Hub',
     lang: 'en',
     baseUrl: SCRIBBLEHUB_WEB_URL,
-    capabilities: ['popular', 'latest', 'search', 'categories'],
+    capabilities: ['popular', 'latest', 'search', 'categories', 'authors'],
   };
 
   readonly usesBrowser = SCRIBBLEHUB_USES_BROWSER;
@@ -120,6 +126,23 @@ export class ScribbleHubSource implements Source {
       waitForSelector: SCRIBBLEHUB_SERIES_WAIT_SELECTOR,
     });
     return parseSeries(seriesId, html);
+  }
+
+  /** The series tab carries the profile metadata and the author's works. */
+  async getAuthor(authorId: string, request: PageRequest = {}): Promise<AuthorPage> {
+    const page = normalizePage(request.page);
+    const html = await this.read(authorSeriesUrl(authorId, page));
+    const author = parseAuthor(authorId, html);
+    const stories = parseAuthorSeries(html).map((item) => authorSeriesToStory(item, author));
+    return {
+      author,
+      stories: toPagedResult(
+        stories,
+        page,
+        hasNextAuthorPage(html, page),
+        author.worksCount ?? undefined,
+      ),
+    };
   }
 
   /**

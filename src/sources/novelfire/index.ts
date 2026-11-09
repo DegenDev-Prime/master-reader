@@ -4,6 +4,7 @@ import { mapWithConcurrency } from '@/utils/html-parse';
 import { normalizePage, toPagedResult } from '../provider-utils';
 import { HttpClient, NotFoundError, type FetchLike, type ResponseCacheStore } from '../transport';
 import type {
+  AuthorPage,
   Category,
   ChapterRef,
   GetStoryOptions,
@@ -23,6 +24,7 @@ import {
   NOVELFIRE_WEB_URL,
 } from './constants';
 import {
+  parseAuthorPage,
   parseBook,
   parseChapterContent,
   parseChapterList,
@@ -56,7 +58,7 @@ export class NovelFireSource implements Source {
     name: 'NovelFire',
     lang: 'en',
     baseUrl: NOVELFIRE_WEB_URL,
-    capabilities: ['popular', 'latest', 'search', 'categories'],
+    capabilities: ['popular', 'latest', 'search', 'categories', 'authors'],
   };
 
   private readonly client: NovelFireClient;
@@ -115,6 +117,13 @@ export class NovelFireSource implements Source {
   /** NovelFire books have no series layer; metadata and chapters are separate. */
   async getStory(id: string, _options: GetStoryOptions = {}): Promise<StoryDetails | null> {
     return parseBook(id, await this.client.getBook(id));
+  }
+
+  async getAuthor(authorId: string, request: PageRequest = {}): Promise<AuthorPage | null> {
+    const slug = authorId.trim();
+    if (!slug) return null;
+    const page = normalizePage(request.page);
+    return parseAuthorPage(slug, await this.client.getAuthor(slug, page), page);
   }
 
   async getChapterList(storyId: string): Promise<ChapterRef[]> {

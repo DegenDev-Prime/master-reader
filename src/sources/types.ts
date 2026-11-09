@@ -1,6 +1,8 @@
+import type { Author } from '@/models/author';
 import type { Story, StoryPage, StorySeries } from '@/models/story';
 
-export type SourceCapability = 'popular' | 'latest' | 'search' | 'tags' | 'categories' | 'auth';
+export type SourceCapability =
+  'popular' | 'latest' | 'search' | 'tags' | 'categories' | 'authors' | 'auth';
 
 /** Listing mode offered by `Source.getPopular` / `Source.getLatest`. */
 export type BrowseKind = 'popular' | 'latest';
@@ -65,6 +67,12 @@ export type StoryDetails = Story & {
   pages?: StoryPage[];
 };
 
+/** One author profile plus the page of works shown with it. */
+export type AuthorPage = {
+  author: Author;
+  stories: PagedResult<Story>;
+};
+
 /** A single chapter of a novel, independent of its content. */
 export type ChapterRef = {
   /** Provider chapter id or path, passed back to `getChapterContent`. */
@@ -107,6 +115,8 @@ export interface Source {
    * carries the canonical library id; callers must use `details.id` from then on.
    */
   getStory(id: string, options?: GetStoryOptions): Promise<StoryDetails | null>;
+  /** Provider author/profile page, when the source exposes one. */
+  getAuthor?(authorId: string, request?: PageRequest): Promise<AuthorPage | null>;
   getTags(): Promise<string[]>;
   getCategories(): Promise<Category[]>;
   isLoggedIn(): boolean;

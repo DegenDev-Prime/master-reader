@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  parseAuthorPage,
   parseChapterContent,
   parseChapters,
   parseListItem,
@@ -11,6 +12,7 @@ import type {
   NovelBuddyListItem,
   NovelBuddyTitle,
 } from '@/sources/novelbuddy/client';
+import { loadTextFixture } from '@/test-utils/fixtures';
 
 const LIST_ITEM: NovelBuddyListItem = {
   id: 'VYPGVZ8z',
@@ -22,6 +24,7 @@ const LIST_ITEM: NovelBuddyListItem = {
   summary: '<p>Growing up in poverty, Sunny never expected anything good.</p>',
   stats: { views: 27486342, ratings_count: 42, chapters_count: 3218 },
   genres: [{ name: 'Fantasy' }, { name: 'Action' }],
+  authors: [{ name: 'Guiltythree', slug: 'guiltythree' }],
 };
 
 const TITLE: NovelBuddyTitle = {
@@ -35,7 +38,7 @@ const TITLE: NovelBuddyTitle = {
   stats: { views: 27486342, ratings_count: 42, chapters_count: 3218 },
   genres: [{ name: 'Fantasy' }],
   tags: [{ name: 'Magic' }],
-  authors: [{ name: 'Guiltythree' }],
+  authors: [{ name: 'Guiltythree', slug: 'guiltythree' }],
 };
 
 describe('novelbuddy parsers', () => {
@@ -45,6 +48,7 @@ describe('novelbuddy parsers', () => {
     expect(story.sourceId).toBe('novelbuddy');
     expect(story.id).toBe('VYPGVZ8z');
     expect(story.title).toBe('Shadow Slave');
+    expect(story.authorId).toBe('guiltythree');
     expect(story.coverUrl).toBe('https://rs.novelbuddy.me/covers/shadow-slave.png');
     expect(story.rating).toBe(4.8);
     expect(story.views).toBe(27486342);
@@ -56,6 +60,7 @@ describe('novelbuddy parsers', () => {
   it('parses a title with its author and tags', () => {
     const story = parseTitle(TITLE);
 
+    expect(story.authorId).toBe('guiltythree');
     expect(story.authorName).toBe('Guiltythree');
     expect(story.tags).toEqual(['Fantasy', 'Magic']);
     expect(story.description).toBe('Growing up in poverty.\n\nA second line.');
@@ -99,5 +104,46 @@ describe('novelbuddy parsers', () => {
 
     expect(parsed.content).toBe('<p>The body.</p>');
     expect(parsed.wordCount).toBeGreaterThan(0);
+  });
+
+  it('parses an author page from the embedded Next data', () => {
+    const page = parseAuthorPage(loadTextFixture('author-page.html', 'novelbuddy'));
+
+    expect(page?.author).toMatchObject({
+      sourceId: 'novelbuddy',
+      id: 'guiltythree',
+      name: 'Guiltythree',
+      url: 'https://novelbuddy.me/authors/guiltythree',
+      avatarUrl: null,
+      bio: null,
+      worksCount: 2,
+    });
+    expect(page?.stories.page).toBe(1);
+    expect(page?.stories.hasNext).toBe(false);
+    expect(page?.stories.total).toBe(2);
+    expect(page?.stories.items.map((story) => story.id)).toEqual(['VYPGVZ8z', 'PDml36YE']);
+    expect(page?.stories.items[0]).toMatchObject({
+      authorId: 'guiltythree',
+      authorName: 'Guiltythree',
+      rating: 4.81,
+      views: 27981548,
+      tags: ['Fantasy', 'Action'],
+    });
+  });
+
+  it('falls back to a humanized slug when og:title is missing', () => {
+    const html =
+      '<script id="__NEXT_DATA__" type="application/json">' +
+      '{"props":{"pageProps":{"slug":"guilty-three"}}}' +
+      '</script>';
+
+    const page = parseAuthorPage(html, 'other');
+    expect(page?.author.id).toBe('guilty-three');
+    expect(page?.author.name).toBe('Guilty Three');
+    expect(page?.stories.items).toEqual([]);
+  });
+
+  it('returns null when the page carries no Next data', () => {
+    expect(parseAuthorPage('<html></html>', 'guiltythree')).toBeNull();
   });
 });

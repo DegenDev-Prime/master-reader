@@ -41,6 +41,30 @@ export const authorSchema = z.looseObject({
   avatar: z.string().nullish(),
 });
 
+/** v3 `3/users/{id}`: profile payload (`{ success, user }`). */
+export const v3UserSchema = z.looseObject({
+  id: idValue.optional(),
+  user_id: idValue.optional(),
+  userid: idValue.optional(),
+  username: z.string().optional(),
+  name: z.string().optional(),
+  display_name: z.string().optional(),
+  bio: z.string().nullish(),
+  biography: z.string().nullish(),
+  userpic: z.unknown().optional(),
+  avatar: z.unknown().optional(),
+  followers_count: numeric.nullish(),
+  submissions_count: numeric.nullish(),
+  series_count: numeric.nullish(),
+  words_count: numeric.nullish(),
+  word_count: numeric.nullish(),
+});
+
+export const v3UserResponseSchema = z.looseObject({
+  success: z.boolean().optional(),
+  user: v3UserSchema,
+});
+
 /** v1: `1/submissions`, `1/top`, `1/user-submissions`, `1/user-favorites`. */
 export const v1StorySchema = z.looseObject({
   id: idValue,
@@ -112,6 +136,15 @@ export const v3StorySchema = z.looseObject({
 export const v3SearchResponseSchema = z.looseObject({
   data: z.array(v3StorySchema).nullish(),
   meta: z.looseObject({ total: numeric.nullish(), submissions_count: numeric.nullish() }).nullish(),
+});
+
+/** v3 `3/users/{id}/stories`: paginated works, same story shape as search. */
+export const v3UserStoriesResponseSchema = z.looseObject({
+  current_page: numeric.nullish(),
+  last_page: numeric.nullish(),
+  total: numeric.nullish(),
+  per_page: numeric.nullish(),
+  data: z.array(v3StorySchema).nullish(),
 });
 
 /** v3 full story: `3/stories/{id}` (`submission` + full `pageText`). */
@@ -191,5 +224,7 @@ export type V3StoryResponse = z.infer<typeof v3StoryResponseSchema>;
 export type V3Series = z.infer<typeof seriesSchema>;
 export type V3SeriesItem = z.infer<typeof seriesItemSchema>;
 export type V3SeriesMeta = z.infer<typeof seriesMetaSchema>;
+export type V3User = z.infer<typeof v3UserSchema>;
+export type V3UserStoriesResponse = z.infer<typeof v3UserStoriesResponseSchema>;
 export type Tag = z.infer<typeof tagSchema>;
 export type Constants = z.infer<typeof constantsSchema>;

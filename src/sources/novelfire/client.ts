@@ -2,6 +2,7 @@ import type { HttpClient } from '../transport';
 
 import { NOVELFIRE_BASE_URL } from './constants';
 import {
+  authorPath,
   bookPath,
   chapterPath,
   chapterRedirectTarget,
@@ -37,6 +38,10 @@ export class NovelFireClient {
 
   getBook(slug: string): Promise<string> {
     return this.http.get<string>(bookPath(slug), { responseType: 'text' });
+  }
+
+  getAuthor(slug: string, page: number): Promise<string> {
+    return this.text(authorPath(slug), page);
   }
 
   getChapterList(slug: string, page: number): Promise<string> {

@@ -8,6 +8,7 @@ const listing = () => loadTextFixture('listing.html', 'scribblehub');
 const series = () => loadTextFixture('series.html', 'scribblehub');
 const chapters = () => loadTextFixture('chapters.html', 'scribblehub');
 const chapter = () => loadTextFixture('chapter.html', 'scribblehub');
+const author = () => loadTextFixture('author.html', 'scribblehub');
 const challenge = () => loadTextFixture('challenge.html', 'scribblehub');
 
 const SERIES_ID = '664073';
@@ -24,6 +25,7 @@ function createSource(
     loadHtml: async (url) => {
       calls.push(url);
       if (overrides.html) return overrides.html(url);
+      if (url.includes('/profile/')) return author();
       if (url.includes('/series/')) return series();
       if (url.includes('/read/')) return chapter();
       return listing();
@@ -42,6 +44,7 @@ describe('ScribbleHubSource', () => {
     const { source } = createSource();
     expect(source.info.id).toBe('scribblehub');
     expect(source.info.capabilities).toContain('popular');
+    expect(source.info.capabilities).toContain('authors');
     expect(source.usesBrowser).toBe(true);
     expect(source.isLoggedIn()).toBe(false);
   });
@@ -66,6 +69,32 @@ describe('ScribbleHubSource', () => {
     const { source } = createSource();
     const story = await source.getStory('664073-rebirth-of-the-nephilim');
     expect(story?.id).toBe(SERIES_ID);
+  });
+
+  it('reads an author page and their series', async () => {
+    const { source, calls } = createSource();
+    const result = await source.getAuthor('109960');
+    expect(result.author.name).toBe('Agdistis');
+    expect(result.author.followers).toBe(4321);
+    expect(result.author.worksCount).toBe(3);
+    expect(result.stories.items).toHaveLength(3);
+    expect(result.stories.items[0].id).toBe('664073');
+    expect(result.stories.items[0].authorId).toBe('109960');
+    expect(result.stories.page).toBe(1);
+    expect(result.stories.hasNext).toBe(true);
+    expect(calls[0]).toContain('/profile/109960/?sp=1');
+  });
+
+  it('supports author series pagination and empty profiles', async () => {
+    const { source, calls } = createSource();
+    await source.getAuthor('109960', { page: 2 });
+    expect(calls[0]).toContain('/profile/109960/?sp=2');
+
+    const empty = createSource({ html: () => '<html><h1>Nobody</h1></html>' }).source;
+    const result = await empty.getAuthor('123');
+    expect(result.author.name).toBe('Nobody');
+    expect(result.stories.items).toEqual([]);
+    expect(result.stories.hasNext).toBe(false);
   });
 
   it('fetches the chapter list through the page session', async () => {

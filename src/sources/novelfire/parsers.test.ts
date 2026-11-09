@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { loadTextFixture } from '@/test-utils/fixtures';
 
 import {
+  parseAuthorPage,
   parseBook,
   parseChapterContent,
   parseChapterDate,
@@ -13,6 +14,7 @@ import {
   slugFromHref,
 } from './parsers';
 
+const author = () => loadTextFixture('author.html', 'novelfire');
 const listing = () => loadTextFixture('listing.html', 'novelfire');
 const book = () => loadTextFixture('book.html', 'novelfire');
 const chapters = () => loadTextFixture('chapters.html', 'novelfire');
@@ -48,11 +50,40 @@ describe('parseListing', () => {
   });
 });
 
+describe('parseAuthorPage', () => {
+  it('maps the author name and profile cards, ignoring related novels', () => {
+    const result = parseAuthorPage('guiltythree', author(), 1);
+
+    expect(result.author).toMatchObject({
+      sourceId: 'novelfire',
+      id: 'guiltythree',
+      name: 'Guiltythree',
+      url: 'https://novelfire.net/author/guiltythree',
+      avatarUrl: null,
+      bio: null,
+    });
+    expect(result.stories.items.map((story) => story.id)).toEqual([
+      'shadow-slave',
+      'free-fall-pyramid-of-gold',
+    ]);
+    expect(result.stories.items[0].rating).toBe(4.5);
+    expect(result.stories.items[0].authorId).toBe('guiltythree');
+    expect(result.stories.items[0].authorName).toBe('Guiltythree');
+    expect(result.stories.page).toBe(1);
+    expect(result.stories.hasNext).toBe(true);
+  });
+
+  it('reports the requested page without a next page', () => {
+    expect(parseAuthorPage('guiltythree', author(), 2).stories.hasNext).toBe(false);
+  });
+});
+
 describe('parseBook', () => {
   it('maps metadata, rating and genres', () => {
     const details = parseBook('shadow-slave', book());
     expect(details.id).toBe('shadow-slave');
     expect(details.title).toBe('Shadow Slave');
+    expect(details.authorId).toBe('guiltythree');
     expect(details.authorName).toBe('Guiltythree');
     expect(details.rating).toBe(4.5);
     expect(details.votes).toBe(830);

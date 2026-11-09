@@ -15,6 +15,8 @@ const routes: Record<string, Responder> = {
   '3/tagsportal/by-name': () => loadFixture('tags-by-name.json'),
   '3/tagsportal/stories': () => loadFixture('v3-tag-portal.json'),
   '3/tagsportal/top': () => loadFixture('tags-top.json'),
+  '3/users/902/stories': () => loadFixture('v3-author-stories.json'),
+  '3/users/902': () => loadFixture('v3-author.json'),
 };
 
 function createSource(
@@ -51,6 +53,7 @@ describe('LiteroticaSource', () => {
     const { source } = createSource();
     expect(source.info.id).toBe('literotica');
     expect(source.info.capabilities).toContain('search');
+    expect(source.info.capabilities).toContain('authors');
     expect(source.isLoggedIn()).toBe(false);
   });
 
@@ -178,6 +181,39 @@ describe('LiteroticaSource', () => {
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0].id).toBe('series-55');
+  });
+
+  it('fetches an author profile and one page of works', async () => {
+    const { source, calls } = createSource();
+    const page = await source.getAuthor('902');
+
+    expect(calls.some((url) => url.includes('3/users/902/stories'))).toBe(true);
+    expect(calls.some((url) => /3\/users\/902(?:\?|$)/.test(url))).toBe(true);
+    expect(page?.author).toMatchObject({
+      id: '902',
+      name: 'AnneAuthor',
+      followers: 42,
+      worksCount: 7,
+    });
+    expect(page?.stories.items.map((story) => story.id)).toEqual(['401', 'series-88']);
+    expect(page?.stories).toMatchObject({ page: 1, hasNext: false, total: 3 });
+  });
+
+  it('passes the requested page to the author works endpoint', async () => {
+    const { source, calls } = createSource({
+      ...routes,
+      '3/users/902/stories': () => ({
+        ...loadFixture<Record<string, unknown>>('v3-author-stories.json'),
+        current_page: 2,
+        last_page: 3,
+      }),
+    });
+    const page = await source.getAuthor('902', { page: 2 });
+    const worksCall = calls.find((url) => url.includes('3/users/902/stories'));
+
+    expect(worksCall).toContain('page=2');
+    expect(page?.stories.page).toBe(2);
+    expect(page?.stories.hasNext).toBe(true);
   });
 
   it('lists tags and categories', async () => {

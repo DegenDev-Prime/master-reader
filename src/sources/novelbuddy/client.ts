@@ -2,6 +2,7 @@ import type { HttpClient } from '../transport';
 
 import { NOVELBUDDY_BASE_URL } from './constants';
 import {
+  authorUrl,
   chapterPath,
   chaptersPath,
   NOVELBUDDY_GENRES_PATH,
@@ -33,6 +34,7 @@ export type NovelBuddyListItem = {
     ratings_count?: number | null;
   } | null;
   genres?: { name: string; slug?: string | null }[] | null;
+  authors?: { name: string; slug?: string | null }[] | null;
   latest_chapters?:
     | {
         id: string;
@@ -171,5 +173,12 @@ export class NovelBuddyClient {
         NovelBuddyEnvelope<{ items: { id: string; name: string; slug: string }[] }>
       >(NOVELBUDDY_GENRES_PATH);
     return response.data.items;
+  }
+
+  async authorPage(slug: string, page = 1): Promise<string> {
+    return this.http.get<string>(authorUrl(slug, page), {
+      responseType: 'text',
+      headers: { accept: 'text/html' },
+    });
   }
 }

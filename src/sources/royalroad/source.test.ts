@@ -7,6 +7,7 @@ import { RoyalRoadSource } from './index';
 const listing = () => loadTextFixture('listing.html', 'royalroad');
 const book = () => loadTextFixture('book.html', 'royalroad');
 const bookWithVolumes = () => loadTextFixture('book-volumes.html', 'royalroad');
+const author = () => loadTextFixture('author.html', 'royalroad');
 const chapter = () => loadTextFixture('chapter.html', 'royalroad');
 const challenge = () => loadTextFixture('challenge.html', 'royalroad');
 
@@ -14,6 +15,7 @@ const routes: Record<string, () => string> = {
   '/fiction/21220/mother-of-learning/chapter/': chapter,
   '/fiction/21220': book,
   '/fiction/47514': bookWithVolumes,
+  '/profile/15870': author,
   '/fictions/best-rated': listing,
   '/fictions/latest-updates': listing,
   '/fictions/search': listing,
@@ -42,6 +44,7 @@ describe('RoyalRoadSource', () => {
     const { source } = createSource(successResponder);
     expect(source.info.id).toBe('royalroad');
     expect(source.info.capabilities).toContain('popular');
+    expect(source.info.capabilities).toContain('authors');
     expect(source.usesBrowser).toBe(true);
     expect(source.isLoggedIn()).toBe(false);
   });
@@ -129,6 +132,44 @@ describe('RoyalRoadSource', () => {
       throw new NotFoundError({ url });
     });
     await expect(source.getPopular()).rejects.toThrow(/currently unavailable/i);
+  });
+
+  it('maps an author profile and its works', async () => {
+    const { source, calls } = createSource(successResponder);
+    const result = await source.getAuthor('15870');
+
+    expect(result?.author).toMatchObject({
+      id: '15870',
+      name: 'Nobody103',
+      followers: 12345,
+      worksCount: 2,
+    });
+    expect(result?.author.bio).toContain('Writing time loops');
+    expect(result?.stories.items.map((story) => story.id)).toEqual(['21220', '31337']);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('/profile/15870');
+    expect(calls[0]).not.toContain('page=');
+  });
+
+  it('paginates author profiles', async () => {
+    const { source, calls } = createSource(successResponder);
+    const result = await source.getAuthor('15870', { page: 2 });
+
+    expect(calls[0]).toContain('/profile/15870?page=2');
+    expect(result?.stories.page).toBe(2);
+    expect(result?.stories.hasNext).toBe(false);
+  });
+
+  it('returns null for a non-numeric author id without fetching', async () => {
+    const { source, calls } = createSource(successResponder);
+    expect(await source.getAuthor('nobody103')).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('reports a Cloudflare challenge for author reads', async () => {
+    const { source } = createSource(() => challenge());
+    await expect(source.getAuthor('15870')).rejects.toBeInstanceOf(SourceError);
+    await expect(source.getAuthor('15870')).rejects.toThrow(/blocking automated access/i);
   });
 
   it('returns an empty page when searching without a query', async () => {

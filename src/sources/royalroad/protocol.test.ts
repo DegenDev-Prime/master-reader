@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { NotFoundError } from '../transport';
 import {
+  authorIdFromHref,
+  authorPath,
+  authorUrl,
   chapterUrl,
   fictionIdFromHref,
   fictionPath,
@@ -34,6 +37,17 @@ describe('royalroad protocol', () => {
 
     expect(fictionPath('21220')).toBe('/fiction/21220');
     expect(fictionUrl('21220')).toBe(`${ROYALROAD_BASE_URL}/fiction/21220`);
+  });
+
+  it('resolves author profile ids and URLs', () => {
+    expect(authorIdFromHref('/profile/15870/nobody103')).toBe('15870');
+    expect(authorIdFromHref('https://www.royalroad.com/profile/15870/nobody103')).toBe('15870');
+    expect(authorIdFromHref('/fiction/21220/mother-of-learning')).toBeNull();
+
+    expect(authorPath('15870')).toBe('/profile/15870');
+    expect(authorPath('15870', 2)).toBe('/profile/15870?page=2');
+    expect(authorUrl('15870')).toBe(`${ROYALROAD_BASE_URL}/profile/15870`);
+    expect(authorUrl('15870', 3)).toBe(`${ROYALROAD_BASE_URL}/profile/15870?page=3`);
   });
 
   it('paginates listings and search with the site page parameter', () => {

@@ -11,8 +11,9 @@ import {
 } from '@/utils/html-parse';
 
 import { NOVELFIRE_BASE_URL, NOVELFIRE_SOURCE_ID as SOURCE_ID } from './constants';
+import { authorUrl } from './protocol';
 import { absoluteUrl, toNumberOrNull } from '../provider-utils';
-import type { Category, StoryDetails } from '../types';
+import type { AuthorPage, Category, StoryDetails } from '../types';
 
 export type NovelFireChapter = {
   /** 1-based chapter number as published by the site. */
@@ -102,6 +103,41 @@ export function parseListing(html: string, page: number): NovelFireListing {
   return { stories, hasNext: hasNextPage(html, page) };
 }
 
+export function parseAuthorPage(slug: string, html: string, page: number): AuthorPage {
+  const parsedName = cleanText(firstMatch(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i) ?? '').replace(
+    /\s+Author Novels\s*$/i,
+    '',
+  );
+  // Author pages append a "You may also Like" block whose cards match
+  // `li.novel-item`; restrict the listing to the profile section above it.
+  const profile = html.split(/<section[^>]*class="[^"]*\brelated\b/i)[0] ?? html;
+  const listing = parseListing(profile, page);
+
+  return {
+    author: {
+      sourceId: SOURCE_ID,
+      id: slug,
+      name: parsedName || slug,
+      url: authorUrl(slug),
+      avatarUrl: null,
+      bio: null,
+      followers: null,
+      worksCount: null,
+      wordCount: null,
+      fetchedAt: null,
+    },
+    stories: {
+      items: listing.stories.map((story) => ({
+        ...story,
+        authorId: slug,
+        authorName: parsedName || null,
+      })),
+      page,
+      hasNext: listing.hasNext,
+    },
+  };
+}
+
 function parseListItem(body: string): Story | null {
   const anchor = firstMatch(body, /<a\b[^>]*>/i);
   const href = anchor ? getAttribute(anchor, 'href') : null;
@@ -123,7 +159,10 @@ function parseListItem(body: string): Story | null {
     authorName: null,
     url: `${NOVELFIRE_BASE_URL}/book/${id}`,
     coverUrl: absoluteUrl(NOVELFIRE_BASE_URL, cover),
-    rating: toNumberOrNull(firstMatch(body, /icon-star"><\/i>\s*([0-9.]+)/i)),
+    rating: toNumberOrNull(
+      firstMatch(body, /icon-star"><\/i>\s*([0-9.]+)/i) ??
+        firstMatch(body, /data-rating="([0-9.]+)"/i),
+    ),
     votes: null,
     views: null,
     wordCount: null,
@@ -139,6 +178,7 @@ export function parseBook(slug: string, html: string): StoryDetails {
   const author = stripTags(
     firstMatch(html, /<span[^>]*itemprop="author"[^>]*>([\s\S]*?)<\/span>/i) ?? '',
   );
+  const authorId = firstMatch(html, /<a\b[^>]*href="\/author\/([^"?#]+)[^"]*"/i);
   const description =
     metaContent(html, 'itemprop', 'description') ?? metaContent(html, 'name', 'description');
   const cover = metaContent(html, 'property', 'og:image');
@@ -148,6 +188,7 @@ export function parseBook(slug: string, html: string): StoryDetails {
     sourceId: SOURCE_ID,
     id: slug,
     title: title || slug,
+    authorId: authorId ?? null,
     authorName: author || null,
     description: description ? cleanText(description) : null,
     categoryId: genres[0]?.id ?? null,

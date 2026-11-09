@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { loadTextFixture } from '@/test-utils/fixtures';
 import { HttpClient } from '../transport';
 import { NovelBuddySource } from './index';
 
@@ -18,7 +19,7 @@ const TITLE = {
   status: 'OnGoing',
   rating: 4.8,
   cover: 'https://rs.novelbuddy.me/covers/shadow-slave.png',
-  authors: [{ name: 'Guiltythree' }],
+  authors: [{ name: 'Guiltythree', slug: 'guiltythree' }],
   genres: [{ name: 'Fantasy' }],
   stats: { views: 27486342, chapters_count: 3218, ratings_count: 42 },
 };
@@ -51,6 +52,7 @@ describe('NovelBuddySource', () => {
     const { source } = createSource(() => jsonResponse({}));
     expect(source.info.id).toBe('novelbuddy');
     expect(source.info.capabilities).toContain('popular');
+    expect(source.info.capabilities).toContain('authors');
     expect(source.isLoggedIn()).toBe(false);
   });
 
@@ -104,6 +106,7 @@ describe('NovelBuddySource', () => {
 
     const story = await source.getStory('VYPGVZ8z', { includeContent: false });
     expect(story?.title).toBe('Shadow Slave');
+    expect(story?.authorId).toBe('guiltythree');
     expect(story?.authorName).toBe('Guiltythree');
   });
 
@@ -167,5 +170,24 @@ describe('NovelBuddySource', () => {
     expect(result.items).toHaveLength(1);
     expect(calls[0]).toContain('q=shadow');
     expect(calls[0]).not.toContain('query=shadow');
+  });
+
+  it('fetches and parses an author page', async () => {
+    const { source, calls } = createSource(
+      () =>
+        new Response(loadTextFixture('author-page.html', 'novelbuddy'), {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        }),
+    );
+
+    const page = await source.getAuthor('guiltythree');
+
+    expect(calls).toEqual(['https://novelbuddy.me/authors/guiltythree']);
+    expect(page?.author).toMatchObject({ id: 'guiltythree', name: 'Guiltythree' });
+    expect(page?.stories.items.map((story) => story.authorId)).toEqual([
+      'guiltythree',
+      'guiltythree',
+    ]);
   });
 });

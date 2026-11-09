@@ -1,9 +1,10 @@
+import type { Author } from '@/models/author';
 import type { Story, StoryPage, StorySeries } from '@/models/story';
 import { decodeHtmlEntities } from '@/utils/html';
 
 import { ParseError } from '../transport';
 import type { Category, ChapterRef } from '../types';
-import { seriesNovelId } from './protocol';
+import { authorWebUrl, seriesNovelId } from './protocol';
 import {
   constantsSchema,
   seriesResponseSchema,
@@ -16,6 +17,8 @@ import {
   v3StoryResponseSchema,
   v3TagPortalResponseSchema,
   v3StorySchema,
+  v3UserResponseSchema,
+  v3UserStoriesResponseSchema,
   type Constants,
   type Tag,
   type V1Story,
@@ -318,6 +321,61 @@ export function parseV3TagStories(
   return {
     stories,
     total: toNumber(data.meta?.submissions_count ?? data.meta?.total),
+  };
+}
+
+function userPicUrl(value: unknown): string | null {
+  if (typeof value === 'string') return value.length > 0 ? value : null;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['url', 'original', 'large', 'medium', 'small', 'thumb']) {
+      const candidate = record[key];
+      if (typeof candidate === 'string' && candidate.length > 0) return candidate;
+    }
+  }
+  return null;
+}
+
+/** Parses `3/users/{id}` into the domain author profile. */
+export function parseV3Author(sourceId: string, authorId: string, payload: unknown): Author {
+  const data = parseOrThrow(v3UserResponseSchema.safeParse(payload), 'v3 author');
+  const user = data.user;
+  const username = user.username ?? user.name ?? user.display_name ?? null;
+  const bio = user.bio ?? user.biography;
+
+  return {
+    sourceId,
+    id: authorId,
+    name: username ? decodeHtmlEntities(username) : authorId,
+    url: username ? authorWebUrl(username) : null,
+    avatarUrl: userPicUrl(user.userpic) ?? userPicUrl(user.avatar),
+    bio: bio ? decodeHtmlEntities(bio) : null,
+    followers: toNumber(user.followers_count),
+    worksCount: toNumber(user.submissions_count),
+    wordCount: toNumber(user.words_count ?? user.word_count),
+    raw: user,
+  };
+}
+
+/** Parses one page of `3/users/{id}/stories`, reusing the v3 story mapping. */
+export function parseV3AuthorWorks(
+  sourceId: string,
+  payload: unknown,
+): { stories: Story[]; page: number; hasNext: boolean; total: number | null } {
+  const data = parseOrThrow(v3UserStoriesResponseSchema.safeParse(payload), 'v3 author works');
+  const stories = (data.data ?? []).map((item) =>
+    asSeriesStory(fromV3Story(sourceId, item), parseV3Series(item.series)),
+  );
+
+  const page = Math.max(1, Math.trunc(toNumber(data.current_page) ?? 1));
+  const lastPage = toNumber(data.last_page);
+  const perPage = toNumber(data.per_page) ?? 50;
+
+  return {
+    stories,
+    page,
+    hasNext: lastPage !== null ? page < lastPage : stories.length >= perPage,
+    total: toNumber(data.total),
   };
 }
 

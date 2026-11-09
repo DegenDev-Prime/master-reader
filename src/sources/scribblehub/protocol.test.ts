@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  authorIdFromHref,
+  authorIdFromInput,
+  authorPath,
+  authorSeriesPath,
+  authorSeriesUrl,
+  authorUrl,
   chapterIdFromHref,
   chapterIdFromInput,
   chapterListExpression,
   chapterPath,
   chapterUrl,
+  hasNextAuthorPage,
   hasNextListingPage,
   isCloudflareChallenge,
   latestPath,
@@ -40,6 +47,31 @@ describe('scribblehub protocol', () => {
     expect(chapterIdFromHref('https://www.scribblehub.com/read/1-a/chapter/2/?x=1')).toBe('2');
     expect(chapterIdFromHref('/series/664073/')).toBeNull();
     expect(chapterIdFromInput('2623040')).toBe('2623040');
+  });
+
+  it('builds profile paths and reads author ids from links', () => {
+    expect(authorIdFromHref('https://www.scribblehub.com/profile/109960/agdistis/')).toBe('109960');
+    expect(authorIdFromHref('/profile/263989/nv1595/')).toBe('263989');
+    expect(authorIdFromHref('/series/664073/')).toBeNull();
+    expect(authorIdFromInput('109960-agdistis')).toBe('109960');
+    expect(authorIdFromInput('https://www.scribblehub.com/profile/109960/agdistis/')).toBe(
+      '109960',
+    );
+    expect(authorIdFromInput('agdistis')).toBe('agdistis');
+
+    expect(authorPath('109960')).toBe('/profile/109960/');
+    expect(authorPath('109960', 2)).toBe('/profile/109960/?page=2');
+    expect(authorUrl('109960')).toBe('https://www.scribblehub.com/profile/109960/');
+    expect(authorSeriesPath('109960')).toBe('/profile/109960/?sp=1');
+    expect(authorSeriesPath('109960', 2)).toBe('/profile/109960/?sp=2');
+    expect(authorSeriesUrl('109960')).toBe('https://www.scribblehub.com/profile/109960/?sp=1');
+  });
+
+  it('paginates author profiles', () => {
+    expect(hasNextAuthorPage('<a href="?sp=2">2</a>', 1)).toBe(true);
+    expect(hasNextAuthorPage('<a href="?page=2">2</a>', 1)).toBe(true);
+    expect(hasNextAuthorPage('<a href="?sp=20">2</a>', 1)).toBe(false);
+    expect(hasNextAuthorPage('<a href="?sp=2">Prev</a>', 2)).toBe(false);
   });
 
   it('paginates every listing with the site parameter', () => {

@@ -42,6 +42,7 @@ const LISTING_PATHS: Record<RoyalRoadListingKind, string> = {
 };
 
 const FICTION_HREF = /^(?:https?:\/\/[^/]+)?\/fiction\/(\d+)(?:[/?#]|$)/i;
+const AUTHOR_HREF = /^(?:https?:\/\/[^/]+)?\/profile\/(\d+)(?:[/?#]|$)/i;
 const CHAPTER_HREF =
   /^(?:https?:\/\/[^/]+)?(\/fiction\/(\d+)(?:\/[^/?#]+)?\/chapter\/(\d+)(?:\/[^?#]*)?)/i;
 
@@ -68,6 +69,19 @@ export function fictionPath(storyId: string): string {
 
 export function fictionUrl(storyId: string): string {
   return royalRoadUrl(fictionPath(storyId));
+}
+
+export function authorIdFromHref(href: string): string | null {
+  return AUTHOR_HREF.exec(href)?.[1] ?? null;
+}
+
+/** Profiles are `/profile/{numericId}`; the page parameter is appended when paginating. */
+export function authorPath(authorId: string, page = 1): string {
+  return `/profile/${authorId}${page > 1 ? `?page=${page}` : ''}`;
+}
+
+export function authorUrl(authorId: string, page = 1): string {
+  return royalRoadUrl(authorPath(authorId, page));
 }
 
 export function listingPath(kind: RoyalRoadListingKind, page: number): string {

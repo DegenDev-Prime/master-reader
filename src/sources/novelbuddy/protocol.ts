@@ -41,6 +41,15 @@ export function chapterPath(id: string, chapterId: string): string {
   return `${chaptersPath(id)}/${chapterId}`;
 }
 
+export function authorPath(slug: string): string {
+  return `/authors/${encodeURIComponent(slug)}`;
+}
+
+export function authorUrl(slug: string, page = 1): string {
+  const url = `${NOVELBUDDY_WEB_URL}${authorPath(slug)}`;
+  return page > 1 ? `${url}?page=${page}` : url;
+}
+
 /** Home blocks ignore `page`; only the first page exists for numeric paging. */
 export function homePageAvailable(page: number): boolean {
   return page === 1;

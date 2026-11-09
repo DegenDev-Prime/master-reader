@@ -69,6 +69,8 @@ type NarrationState = {
   chunkStartedAt: number;
   /** The current time, kept up to date while the voice is speaking. */
   now: number;
+  /** Real position inside the loaded clip, when the player reports one. */
+  audioPosition: number | null;
   /** How far into the current chunk the voice is by `now`, in seconds. */
   positionAt: (now: number) => number;
   /** The real time the voice has been speaking by `now`, in milliseconds. */
@@ -126,11 +128,14 @@ type NarrationState = {
 type NarrationController = Pick<Narrator, 'play' | 'pause' | 'stop' | 'setRate' | 'warmUp'> & {
   release?: () => Promise<void>;
   retry?: (index: number) => void;
+  seekWithin?: (seconds: number) => Promise<boolean>;
 };
 
 let narrator: NarrationController | null = null;
 let narratorEngineKey = '';
 let activeEngine: NarratorEngine | null = null;
+/** Neural clips report their own position; system TTS has to use the clock. */
+let precisePosition = false;
 let chunks: SpeechChunk[] = [];
 let seriesItems: StorySeriesItem[] = [];
 let narrationChapterList: { id: string; position: number; title: string }[] = [];
@@ -370,6 +375,7 @@ function createNarrationListener(): NarratorListener {
         chunkId: chunks[index]?.id ?? null,
         chunkText: chunks[index]?.text ?? null,
         chunkStartedAt: now,
+        audioPosition: precisePosition ? 0 : null,
       });
     },
     onDone: (reason) => {
@@ -387,6 +393,22 @@ function createNarrationListener(): NarratorListener {
     },
     onWarning: (index) => {
       useNarrationStore.setState({ failedClipIndex: index });
+    },
+    onPlaybackStatus: (status) => {
+      const state = useNarrationStore.getState();
+      if (state.status === 'idle' || state.status === 'error') return;
+      const nextStatus: NarrationStatus = status.playing
+        ? 'playing'
+        : status.isBuffering
+          ? state.status
+          : status.isLoaded
+            ? 'paused'
+            : state.status;
+      useNarrationStore.setState({
+        status: nextStatus,
+        now: Date.now(),
+        audioPosition: status.positionSeconds,
+      });
     },
   };
 }
@@ -636,6 +658,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
   chunkId: null,
   chunkStartedAt: 0,
   now: Date.now(),
+  audioPosition: null,
   chapterWindow: [],
   chapterTotal: 0,
   speed: 1,
@@ -690,6 +713,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
     narrationChapterTotal = 0;
     narrationPageMaps = new Map();
     narrationPages = [];
+    precisePosition = useSettingsStore.getState().settings.narration.engine !== 'system';
     // The narrator keeps this array, so the background loader can extend it.
     const sessionChunks: SpeechChunk[] = [];
     chunks = sessionChunks;
@@ -778,6 +802,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
         chunkId: sessionChunks[startIndex]?.id ?? null,
         chunkText: sessionChunks[startIndex]?.text ?? null,
         chunkStartedAt: Date.now(),
+        audioPosition: precisePosition ? 0 : null,
         speed: narration.speed,
       });
 
@@ -917,6 +942,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       chunkText: null,
       chunkId: null,
       chunkStartedAt: 0,
+      audioPosition: null,
       chapterWindow: [],
       chapterTotal: 0,
       failedClipIndex: null,
@@ -949,6 +975,7 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
       // The clock starts as if the chunk began intoSeconds ago, so the shown
       // position lands where the seek asked for, not at the chunk's start.
       chunkStartedAt: Date.now() - pendingSeekInto * 1000,
+      audioPosition: precisePosition ? pendingSeekInto : null,
       now: Date.now(),
     });
     // While paused the engine is already stopped: the position is enough, and
@@ -965,18 +992,19 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
    * not count their estimate, so the position is continuous.
    */
   elapsedMsAt(now: number): number {
-    const { chunkIndex, chunkStartedAt, status, speed } = get();
+    const { chunkIndex, chunkStartedAt, status, speed, audioPosition } = get();
     const offsets = chunkOffsets(chunks, speed);
     let total = (offsets[chunkIndex] ?? 0) * 1000;
     // The estimate is a per-chunk constant, so only the difference between a
-    // chunk's real time and its estimate has to be added; the clock ticks once
-    // a second and must not re-split thousands of strings to do it.
+    // chunk's real time and its estimate has to be added.
     for (let index = 0; index < chunkIndex; index += 1) {
       const known = chunkDurations[index];
       if (known == null) continue;
       total += known - (offsets[index + 1] - offsets[index]) * 1000;
     }
-    if (status === 'playing' && chunkStartedAt > 0) {
+    if (precisePosition && (status === 'playing' || status === 'paused') && audioPosition != null) {
+      total += Math.max(0, audioPosition) * 1000;
+    } else if (status === 'playing' && chunkStartedAt > 0) {
       total += Math.max(0, now - chunkStartedAt) + chunkOffsetInto;
     }
     return total;
@@ -984,25 +1012,33 @@ export const useNarrationStore = create<NarrationState>((set, get) => ({
 
   /** How far into the current chunk the voice is by `now`, in seconds. */
   positionAt(now: number): number {
-    const { chunkStartedAt, status } = get();
+    const { chunkStartedAt, status, audioPosition } = get();
+    if (precisePosition && (status === 'playing' || status === 'paused') && audioPosition != null) {
+      return Math.max(0, audioPosition);
+    }
     if (chunkStartedAt <= 0) return 0;
     if (status !== 'playing') return pausedPosition;
     return Math.max(0, (now - chunkStartedAt) / 1000 + chunkOffsetInto);
   },
 
   async skip(seconds) {
-    const { chunkIndex, speed } = get();
+    const { chunkIndex, speed, status } = get();
     if (chunks.length === 0) return;
-    // The voice's place inside the chunk comes from the same clock the player
-    // shows, so a skip of a few seconds really moves that far and a rewind
-    // after a pause is not counted from the pause.
-    const target = seekTargetAfterSeconds(
-      chunks,
-      chunkIndex,
-      seconds,
-      speed,
-      get().positionAt(Date.now()),
-    );
+    const into = get().positionAt(Date.now());
+    const target = seekTargetAfterSeconds(chunks, chunkIndex, seconds, speed, into);
+    // A skip that stays inside the loaded clip is a cheap player seek; only
+    // crossing a clip boundary needs a new clip and a synthesis check.
+    if (target.index === chunkIndex && status === 'playing') {
+      const seekWithin = narrator?.seekWithin;
+      if (seekWithin && (await seekWithin(target.intoSeconds))) {
+        set({
+          audioPosition: target.intoSeconds,
+          chunkStartedAt: Date.now() - target.intoSeconds * 1000,
+          now: Date.now(),
+        });
+        return;
+      }
+    }
     await get().seekChunk(target.index, false, target.intoSeconds);
   },
 

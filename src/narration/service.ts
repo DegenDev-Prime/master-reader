@@ -26,6 +26,15 @@ export type NarratorListener = {
   onError?: (error: Error) => void;
   /** A clip was permanently skipped; playback continues with the next one. */
   onWarning?: (index: number) => void;
+  /** Real player state, including lockscreen/notification play-pause. */
+  onPlaybackStatus?: (status: {
+    playing: boolean;
+    isLoaded: boolean;
+    isBuffering: boolean;
+    positionSeconds: number;
+    durationSeconds: number;
+    error: string | null;
+  }) => void;
 };
 
 export type NarratorDeps = {

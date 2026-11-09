@@ -4,7 +4,9 @@ import {
   isAudioPlaying,
   pauseAudio,
   playAudioFile,
+  seekAudio,
   setAudioRate,
+  subscribeAudioStatus,
   unloadAudioPlayer,
 } from './audio-output';
 import { clipAt, nextPlayableIndex, type ClipStack } from './clip-stack';
@@ -29,7 +31,18 @@ export type ClipPlayer = {
   setRate: (rate: number) => boolean;
   positionSeconds: () => number | null;
   durationSeconds?: () => number | null;
+  seek?: (seconds: number) => Promise<void>;
+  subscribe?: (listener: (status: AudioPlaybackStatus) => void) => () => void;
   unload?: () => Promise<void>;
+};
+
+export type AudioPlaybackStatus = {
+  playing: boolean;
+  isLoaded: boolean;
+  isBuffering: boolean;
+  positionSeconds: number;
+  durationSeconds: number;
+  error: string | null;
 };
 
 export type ClipNarratorDeps = {
@@ -56,6 +69,8 @@ const defaultPlayer: ClipPlayer = {
   setRate: setAudioRate,
   positionSeconds: audioPosition,
   durationSeconds: audioDuration,
+  seek: seekAudio,
+  subscribe: subscribeAudioStatus,
   unload: unloadAudioPlayer,
 };
 
@@ -78,7 +93,9 @@ export class ClipNarrator {
   private lastPageIndex: number | null = null;
   private playing = false;
   private busy = false;
+  private started = false;
   private token = 0;
+  private unsubscribeStatus: (() => void) | null = null;
   private status: NarrationStatus = 'idle';
   private readonly playbackFailures = new Map<number, number>();
   private readonly warned = new Set<number>();
@@ -92,6 +109,11 @@ export class ClipNarrator {
       delay: deps.retryDelay,
       onUpdate: (stack) => this.onStack(stack),
     });
+    this.unsubscribeStatus =
+      this.player.subscribe?.((status) => {
+        if (!this.started) return;
+        this.listener.onPlaybackStatus?.(status);
+      }) ?? null;
   }
 
   get currentStatus(): NarrationStatus {
@@ -103,6 +125,7 @@ export class ClipNarrator {
     const start = clampIndex(options.startIndex ?? 0, options.chunks.length);
     this.playing = true;
     this.busy = false;
+    this.started = false;
     this.token += 1;
     void this.player.pause();
     this.index = start;
@@ -125,6 +148,7 @@ export class ClipNarrator {
 
   async pause(): Promise<void> {
     this.playing = false;
+    this.started = false;
     this.token += 1;
     this.busy = false;
     const position = this.player.positionSeconds();
@@ -135,6 +159,7 @@ export class ClipNarrator {
 
   async stop(): Promise<void> {
     this.playing = false;
+    this.started = false;
     this.token += 1;
     this.busy = false;
     this.worker.stop();
@@ -149,6 +174,14 @@ export class ClipNarrator {
     if (this.sourceChunks !== chunks) this.sourceChunks = chunks;
     this.syncChunks();
     if (this.playing) void this.maybePlay();
+  }
+
+  /** Seeks inside the loaded clip without replacing or re-synthesising it. */
+  async seekWithin(seconds: number): Promise<boolean> {
+    if (!this.playing || !this.started || !this.player.seek) return false;
+    this.intoMs = Math.max(0, seconds) * 1000;
+    await this.player.seek(this.intoMs / 1000);
+    return true;
   }
 
   /** User retry for a clip the worker marked dead. */
@@ -171,6 +204,8 @@ export class ClipNarrator {
   }
 
   async release(): Promise<void> {
+    this.unsubscribeStatus?.();
+    this.unsubscribeStatus = null;
     await this.worker.release();
     await this.player.unload?.();
   }
@@ -258,18 +293,21 @@ export class ClipNarrator {
         this.intoMs / 1000,
         () => {
           if (token !== this.token || !this.playing) return;
+          this.started = true;
           this.setStatus('playing');
           this.listener.onChunk?.(index);
           this.deps.onProgress(index);
         },
       );
       if (token !== this.token || !this.playing) return;
+      this.started = false;
       this.lastPageIndex = chunk.pageIndex;
       this.index = index + 1;
       this.intoMs = 0;
       this.worker.setPlayIndex(this.index);
     } catch (error) {
       if (token !== this.token || !this.playing) return;
+      this.started = false;
       if (error instanceof NarrationStoppedError) {
         this.setStatus('paused');
         return;
@@ -297,6 +335,7 @@ export class ClipNarrator {
 
   private async pauseFor(reason: 'sleep' | 'endOfChapter'): Promise<void> {
     this.playing = false;
+    this.started = false;
     this.token += 1;
     this.busy = false;
     await this.player.pause();

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Master Reader",
     "slug": "master-reader",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "master-reader",
@@ -18,7 +18,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "versionName": "0.3.0"
+      "versionName": "0.3.1"
     },
     "plugins": [
       "expo-router",
@@ -34,7 +34,12 @@
       "expo-sharing",
       "expo-localization",
       "expo-background-task",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true
+        }
+      ],
       [
         "expo-build-properties",
         {

@@ -8,6 +8,17 @@ export type AudioTrackMeta = {
   artist: string;
 };
 
+export type AudioPlaybackState = {
+  playing: boolean;
+  isLoaded: boolean;
+  isBuffering: boolean;
+  /** Position inside the loaded clip, in seconds. */
+  positionSeconds: number;
+  /** Exact loaded duration, in seconds (0 before it is known). */
+  durationSeconds: number;
+  error: string | null;
+};
+
 const POLL_MS = 60;
 const LOAD_TIMEOUT_MS = 20_000;
 const MIN_RATE = 0.5;
@@ -15,6 +26,57 @@ const MAX_RATE = 2;
 
 let player: AudioPlayer | null = null;
 let modeReady = false;
+let lockScreenKey = '';
+let statusSubscription: { remove(): void } | null = null;
+let lastStatus: AudioPlaybackState = {
+  playing: false,
+  isLoaded: false,
+  isBuffering: false,
+  positionSeconds: 0,
+  durationSeconds: 0,
+  error: null,
+};
+const statusListeners = new Set<(status: AudioPlaybackState) => void>();
+
+function toPlaybackState(status: {
+  playing: boolean;
+  isLoaded: boolean;
+  isBuffering: boolean;
+  currentTime: number;
+  duration: number;
+  error: string | null;
+}): AudioPlaybackState {
+  return {
+    playing: status.playing,
+    isLoaded: status.isLoaded,
+    isBuffering: status.isBuffering,
+    positionSeconds: Number.isFinite(status.currentTime) ? status.currentTime : 0,
+    durationSeconds: Number.isFinite(status.duration) ? status.duration : 0,
+    error: status.error,
+  };
+}
+
+function publishStatus(status: AudioPlaybackState): void {
+  lastStatus = status;
+  for (const listener of statusListeners) listener(status);
+}
+
+/** Current player status, for views that cannot subscribe. */
+export function audioStatus(): AudioPlaybackState {
+  return lastStatus;
+}
+
+/**
+ * One player-wide status subscription for the whole app. This is what lets the
+ * UI follow lockscreen/notification play-pause and real playback position.
+ */
+export function subscribeAudioStatus(listener: (status: AudioPlaybackState) => void): () => void {
+  statusListeners.add(listener);
+  void ensurePlayer();
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,7 +97,23 @@ async function ensurePlayer(): Promise<AudioPlayer> {
     modeReady = true;
   }
   player ??= createAudioPlayer(null, { updateInterval: 200 });
+  if (!statusSubscription) {
+    statusSubscription = player.addListener('playbackStatusUpdate', (status) => {
+      publishStatus(toPlaybackState(status));
+    });
+  }
   return player;
+}
+
+/**
+ * Registers the media session once per story/voice, not once per clip. The
+ * notification is what keeps Android playback alive in the background.
+ */
+function applyLockScreenMeta(current: AudioPlayer, meta: AudioTrackMeta): void {
+  const key = `${meta.title}|${meta.artist}`;
+  if (key === lockScreenKey) return;
+  lockScreenKey = key;
+  current.setActiveForLockScreen(true, { title: meta.title, artist: meta.artist });
 }
 
 /**
@@ -61,7 +139,7 @@ export async function playAudioFile(
   const current = await ensurePlayer();
   current.replace({ uri });
   current.setPlaybackRate(clampRate(rate));
-  current.setActiveForLockScreen(true, { title: meta.title, artist: meta.artist });
+  applyLockScreenMeta(current, meta);
   current.play();
   if (startSeconds > 0) {
     await current.seekTo(startSeconds).catch(() => undefined);
@@ -98,7 +176,13 @@ export async function playAudioFile(
       ) {
         break;
       }
-      if (Date.now() - startedAt > LOAD_TIMEOUT_MS) {
+      // A lockscreen/notification pause must not look like a failed load:
+      // wait for the system to resume instead of timing out.
+      if (started && current.isLoaded && !current.playing) {
+        await sleep(POLL_MS);
+        continue;
+      }
+      if (!started && Date.now() - startedAt > LOAD_TIMEOUT_MS) {
         throw new Error('Audio failed to load.');
       }
       await sleep(POLL_MS);
@@ -159,4 +243,15 @@ export async function unloadAudioPlayer(): Promise<void> {
     // Already released.
   }
   player = null;
+  lockScreenKey = '';
+  statusSubscription?.remove();
+  statusSubscription = null;
+  publishStatus({
+    playing: false,
+    isLoaded: false,
+    isBuffering: false,
+    positionSeconds: 0,
+    durationSeconds: 0,
+    error: null,
+  });
 }

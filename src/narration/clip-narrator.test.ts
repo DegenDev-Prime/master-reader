@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ClipNarrator, type ClipPlayer } from './clip-narrator';
+import { ClipNarrator, type AudioPlaybackStatus, type ClipPlayer } from './clip-narrator';
 import type { SpeechChunk } from './chunker';
 import { startEndOfChapterTimer, stopSleepTimer } from './sleep-timer';
 
@@ -11,6 +11,8 @@ vi.mock('./audio-output', () => ({
   setAudioRate: vi.fn(() => true),
   audioPosition: vi.fn(() => null),
   audioDuration: vi.fn(() => null),
+  seekAudio: vi.fn(async () => {}),
+  subscribeAudioStatus: vi.fn(() => () => {}),
   unloadAudioPlayer: vi.fn(async () => {}),
 }));
 
@@ -26,11 +28,13 @@ const chunks = [chunk(0, 'one'), chunk(1, 'two'), chunk(2, 'three')];
 
 class FakePlayer implements ClipPlayer {
   readonly played: string[] = [];
+  readonly seeks: number[] = [];
   failures = 0;
   rate = 1;
   paused = false;
   private resolve: (() => void) | null = null;
   private reject: ((error: Error) => void) | null = null;
+  private statusListener: ((status: AudioPlaybackStatus) => void) | null = null;
 
   play(
     uri: string,
@@ -79,6 +83,21 @@ class FakePlayer implements ClipPlayer {
     return 0;
   }
 
+  async seek(seconds: number): Promise<void> {
+    this.seeks.push(seconds);
+  }
+
+  subscribe(listener: (status: AudioPlaybackStatus) => void): () => void {
+    this.statusListener = listener;
+    return () => {
+      this.statusListener = null;
+    };
+  }
+
+  emitStatus(status: AudioPlaybackStatus): void {
+    this.statusListener?.(status);
+  }
+
   private reset(): void {
     this.resolve = null;
     this.reject = null;
@@ -94,6 +113,7 @@ function makeNarrator(
     onError?: (error: Error) => void;
     onChunk?: (index: number) => void;
     onWarning?: (index: number) => void;
+    onPlaybackStatus?: (status: AudioPlaybackStatus) => void;
   } = {},
 ) {
   return new ClipNarrator(
@@ -117,6 +137,7 @@ function makeNarrator(
       onError: options.onError,
       onChunk: options.onChunk,
       onWarning: options.onWarning,
+      onPlaybackStatus: options.onPlaybackStatus,
     },
   );
 }
@@ -180,6 +201,39 @@ describe('ClipNarrator', () => {
     player.finish();
     await waitFor(() => player.played.length >= 3);
     expect(player.played[2]).toBe('file:///two.wav');
+  });
+
+  it('surfaces external player pause and position after playback starts', async () => {
+    const player = new FakePlayer();
+    const onPlaybackStatus = vi.fn();
+    const narrator = makeNarrator(player, { onPlaybackStatus });
+
+    narrator.play({ chunks, startIndex: 0, rate: 1 });
+    await waitFor(() => player.played.length === 1);
+
+    player.emitStatus({
+      playing: false,
+      isLoaded: true,
+      isBuffering: false,
+      positionSeconds: 5,
+      durationSeconds: 10,
+      error: null,
+    });
+
+    expect(onPlaybackStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ playing: false, positionSeconds: 5 }),
+    );
+  });
+
+  it('seeks inside the current clip without restarting it', async () => {
+    const player = new FakePlayer();
+    const narrator = makeNarrator(player);
+
+    narrator.play({ chunks, startIndex: 0, rate: 1 });
+    await waitFor(() => player.played.length === 1);
+
+    await expect(narrator.seekWithin(4)).resolves.toBe(true);
+    expect(player.seeks).toEqual([4]);
   });
 
   it('reports a fatal error when every clip dies', async () => {

@@ -19,6 +19,8 @@ import {
   chaptersOf,
   collapseCreators,
   creatorUrl,
+  filterCreators,
+  orderCreators,
   parseArchiveStoryId,
   postHtml,
   postSubtitle,
@@ -69,9 +71,17 @@ export class ArchiveSource implements Source {
     const query = filters.query?.trim() ?? '';
     if (!query) return { items: [], page, hasNext: false, total: 0 };
 
-    const { posts } = await this.client.recentPosts((page - 1) * this.pageSize, query);
-    const stories = await this.postsToStories(posts);
-    return toPagedResult(stories, page, posts.length >= this.pageSize);
+    // Search the creator index, not `/posts?q=`: archive stories are creators,
+    // while post search matches prose that merely mentions the query.
+    const matches = orderCreators(
+      filterCreators(await this.client.creators(), query, filters.categories ?? []),
+      filters.sort === 'newest' ? 'newest' : 'popular',
+    );
+    const offset = (page - 1) * this.pageSize;
+    const stories = matches
+      .slice(offset, offset + this.pageSize)
+      .map((creator) => this.creatorToStory(creator, undefined));
+    return toPagedResult(stories, page, offset + this.pageSize < matches.length, matches.length);
   }
 
   async getStory(id: string): Promise<StoryDetails | null> {

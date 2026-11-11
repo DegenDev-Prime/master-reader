@@ -19,6 +19,7 @@ import {
   avatarUrl as archiveAvatarUrl,
   creatorPostsPath,
   creatorProfilePath,
+  creatorsFromPayload,
   parseCreator,
   parsePost,
   postPath,
@@ -48,6 +49,8 @@ export class ArchiveClient {
   private readonly profileCache = new Map<string, ArchiveCreator | null>();
   /** A creator's post list, kept briefly so a screen fetches it once. */
   private readonly postCache = new Map<string, { posts: ArchivePost[]; at: number }>();
+  /** The whole creators index is large; keep one copy per session. */
+  private creatorsCache: { creators: ArchiveCreator[]; at: number } | null = null;
 
   constructor(
     private readonly variant: ArchiveVariant,
@@ -64,6 +67,23 @@ export class ArchiveClient {
 
   get thumbnailBase(): string | null {
     return this.variant.thumbnailBase;
+  }
+
+  /**
+   * The archive's creator index. Search is by creator name, not post text:
+   * the app's archive "stories" are creators, and `/posts?q=` matches post
+   * bodies, which produces misleading results.
+   */
+  async creators(): Promise<ArchiveCreator[]> {
+    if (this.creatorsCache && Date.now() - this.creatorsCache.at < POST_CACHE_MS) {
+      return this.creatorsCache.creators;
+    }
+    const payload = await this.fetchJson('/creators');
+    const creators = creatorsFromPayload(payload)
+      .map(parseCreator)
+      .filter((creator): creator is ArchiveCreator => creator !== null);
+    this.creatorsCache = { creators, at: Date.now() };
+    return creators;
   }
 
   /** Recent posts across the whole archive, newest first. */

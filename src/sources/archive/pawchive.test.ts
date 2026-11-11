@@ -67,11 +67,19 @@ describe('PawchiveSource', () => {
     expect(result.items[1].id).toBe('patreon:999');
   });
 
-  it('searches the post feed', async () => {
-    const { source, calls } = createSource(() => jsonResponse([POST]));
-    const result = await source.search({ query: 'chapter' });
+  it('searches the creator index by name', async () => {
+    const { source, calls } = createSource(() => jsonResponse([CREATOR]));
+    const result = await source.search({ query: 'bokaba' });
     expect(result.items).toHaveLength(1);
-    expect(calls[0]).toContain('q=chapter');
+    expect(result.items[0].title).toBe('BOKABA');
+    expect(calls[0]).toContain('/creators');
+    expect(calls[0]).not.toContain('q=');
+  });
+
+  it('does not return a creator whose post merely mentions the query', async () => {
+    const { source } = createSource(() => jsonResponse([CREATOR]));
+    const result = await source.search({ query: 'words in a post' });
+    expect(result.items).toHaveLength(0);
   });
 
   it('returns nothing for an empty search', async () => {

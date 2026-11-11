@@ -145,6 +145,54 @@ export function postsFromPayload(payload: unknown): unknown[] {
   return [];
 }
 
+/** The creators index answers with an array (or a wrapped `creators` list). */
+export function creatorsFromPayload(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (typeof payload === 'object' && payload !== null) {
+    const record = payload as Record<string, unknown>;
+    if (Array.isArray(record.creators)) return record.creators;
+    if (Array.isArray(record.items)) return record.items;
+  }
+  return [];
+}
+
+/** Case-insensitive creator-name search over the cached index. */
+export function filterCreators(
+  creators: readonly ArchiveCreator[],
+  query: string,
+  services: readonly string[] = [],
+): ArchiveCreator[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const allowed = services.length > 0 ? new Set(services) : null;
+  return creators.filter((creator) => {
+    if (allowed && !allowed.has(creator.service)) return false;
+    return (
+      creator.name.toLowerCase().includes(needle) ||
+      (creator.publicId?.toLowerCase().includes(needle) ?? false)
+    );
+  });
+}
+
+/** Stable ordering for archive search: most-favorited first, then name. */
+export function orderCreators(
+  creators: readonly ArchiveCreator[],
+  sort: 'popular' | 'newest' = 'popular',
+): ArchiveCreator[] {
+  const ordered = [...creators];
+  ordered.sort((a, b) => {
+    if (sort === 'newest') {
+      const updated = (b.updated ?? 0) - (a.updated ?? 0);
+      if (updated !== 0) return updated;
+    } else {
+      const favorited = (b.favorited ?? 0) - (a.favorited ?? 0);
+      if (favorited !== 0) return favorited;
+    }
+    return a.name.localeCompare(b.name);
+  });
+  return ordered;
+}
+
 export function unwrapPostPayload(payload: unknown, wrapsPost: boolean): unknown {
   if (!wrapsPost) return payload;
   if (typeof payload !== 'object' || payload === null) return null;

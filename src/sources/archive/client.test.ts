@@ -30,6 +30,23 @@ describe('ArchiveClient', () => {
     expect(count).toBe(1);
   });
 
+  it('reads the creators index once and caches it', async () => {
+    let calls = 0;
+    const client = new ArchiveClient(VARIANT, async (path) => {
+      if (path === '/creators') {
+        calls += 1;
+        return [{ id: '1', name: 'Creator', service: 'patreon' }];
+      }
+      return [];
+    });
+
+    const first = await client.creators();
+    const second = await client.creators();
+    expect(first.map((creator) => creator.name)).toEqual(['Creator']);
+    expect(second).toBe(first);
+    expect(calls).toBe(1);
+  });
+
   it('reads a wrapped list of posts', async () => {
     const client = new ArchiveClient(VARIANT, async () => ({
       count: 50,

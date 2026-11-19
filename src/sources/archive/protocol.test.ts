@@ -8,7 +8,9 @@ import {
   collapseCreators,
   creatorPostsPath,
   creatorProfilePath,
+  orderArchivePosts,
   parseArchiveStoryId,
+  parseArchiveTitle,
   parseCreator,
   parsePost,
   postHtml,
@@ -192,6 +194,55 @@ describe('archive listings', () => {
   });
 });
 
+describe('archive collections', () => {
+  it('reads the collection and chapter number from real Actus titles', () => {
+    expect(parseArchiveTitle('Return of the Runebound Professor - Chapter 1035')).toEqual({
+      collection: 'Return of the Runebound Professor',
+      chapterNumber: 1035,
+    });
+    expect(parseArchiveTitle('Nightmare Realm Summoner -Chapter 352')).toEqual({
+      collection: 'Nightmare Realm Summoner',
+      chapterNumber: 352,
+    });
+    expect(parseArchiveTitle('Whom The Gods Would Destroy 33')).toEqual({
+      collection: 'Whom The Gods Would Destroy',
+      chapterNumber: 33,
+    });
+    expect(parseArchiveTitle('Rise of the Living Forge - Chapters 614-615')).toEqual({
+      collection: 'Rise of the Living Forge',
+      chapterNumber: 614,
+    });
+  });
+
+  it('keeps an uncollected post loose', () => {
+    expect(parseArchiveTitle('Animations and more!!')).toEqual({
+      collection: null,
+      chapterNumber: null,
+    });
+  });
+
+  it('groups collections by title and sorts chapters inside each', () => {
+    const posts = [
+      post('a3', { title: 'Actus Series - Chapter 3', published: 300 }),
+      post('b2', { title: 'Other Series - Chapter 2', published: 200 }),
+      post('a1', { title: 'Actus Series - Chapter 1', published: 100 }),
+      post('a2', { title: 'Actus Series - Chapter 2', published: 200 }),
+      post('loose', { title: 'Announcement', published: 50 }),
+    ];
+
+    const ordered = orderArchivePosts(posts);
+    expect(ordered.map((item) => item.post.id)).toEqual(['a1', 'a2', 'a3', 'b2', 'loose']);
+    expect(ordered.map((item) => item.collection)).toEqual([
+      'Actus Series',
+      'Actus Series',
+      'Actus Series',
+      'Other Series',
+      null,
+    ]);
+    expect(ordered.map((item) => item.collectionIndex)).toEqual([0, 1, 2, 0, null]);
+  });
+});
+
 describe('archive chapters', () => {
   it('reverses the newest-first feed into reading order', () => {
     const posts = [
@@ -222,6 +273,8 @@ describe('archive chapters', () => {
         index: 0,
         title: '',
         url: 'https://example.test/patreon/30500811/post/1',
+        volume: null,
+        volumeIndex: null,
         publishedAt: 1_760_000_000,
       },
       {
@@ -229,6 +282,8 @@ describe('archive chapters', () => {
         index: 1,
         title: 'Chapter 2',
         url: 'https://example.test/patreon/30500811/post/2',
+        volume: null,
+        volumeIndex: null,
         publishedAt: 1_760_000_000,
       },
     ]);

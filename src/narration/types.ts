@@ -1,17 +1,4 @@
-/** Shared narration domain types. Framework-agnostic; no RN imports. */
-
-import type { NarrationEngineId } from '@/services/settings';
-
-export type { NarrationEngineId };
-
-export type NarrationStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'error';
-
-export type VoiceInfo = {
-  id: string;
-  name: string;
-  language: string;
-  engine: NarrationEngineId;
-};
+/** Persisted narration data. Framework-agnostic; no RN imports. */
 
 export type NarrationProgress = {
   sourceId: string;
@@ -34,11 +21,4 @@ export type NarrationBookmark = {
   label: string | null;
   /** unix seconds */
   createdAt: number;
-};
-
-export type VoicePackState = {
-  engine: 'piper' | 'kokoro';
-  voiceId: string;
-  bytes: number;
-  ready: boolean;
 };

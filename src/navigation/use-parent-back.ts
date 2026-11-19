@@ -11,7 +11,6 @@ import { buildHref, findTargetInTree, type NavigationNode, type RouteTarget } fr
  *
  *   (tabs)/index              library
  *   (tabs)/browse             browse
- *   (tabs)/audio              audio
  *   (tabs)/more               more
  *   search                     library
  *   story/[sourceId]/[id]      story
@@ -25,7 +24,6 @@ import { buildHref, findTargetInTree, type NavigationNode, type RouteTarget } fr
  *   settings/...               settings
  *   restore                    settings/backup
  *   export                     settings/backup
- *   pronunciation              settings/narration
  *
  * Two rules keep the stack honest:
  *

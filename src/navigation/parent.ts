@@ -5,7 +5,6 @@
  *
  *   (tabs)/index              library
  *   (tabs)/browse             browse
- *   (tabs)/audio              audio
  *   (tabs)/more               more
  *   search                     library
  *   story/[sourceId]/[id]      story
@@ -19,7 +18,6 @@
  *   settings/...               settings
  *   restore                    settings/backup
  *   export                     settings/backup
- *   pronunciation              settings/narration
  *
  * A back button must land on that parent, and a button that jumps to a parent
  * must not push a second copy of it. Pushing the chapter list from the reader

@@ -1,5 +1,11 @@
 import type { SpeechChunk } from './chunker';
-import { estimateDurationMs } from './player-estimates';
+
+const WORDS_PER_MINUTE = 150;
+
+function estimateDurationMs(text: string, speed = 1): number {
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  return Math.round((words / (Math.max(0.25, speed) * WORDS_PER_MINUTE)) * 60_000);
+}
 
 /**
  * One speech chunk and the generated clip that speaks it. The text spine is

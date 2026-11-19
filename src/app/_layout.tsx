@@ -78,12 +78,10 @@ function RootNavigator() {
         <Stack.Screen name="settings/reader" />
         <Stack.Screen name="settings/advanced" />
         <Stack.Screen name="settings/sources" />
-        <Stack.Screen name="settings/narration" />
         <Stack.Screen name="settings/storage" />
         <Stack.Screen name="settings/backup" />
         <Stack.Screen name="settings/about" />
         <Stack.Screen name="restore" />
-        <Stack.Screen name="pronunciation" />
         <Stack.Screen name="export" />
       </Stack>
     </ThemeProvider>

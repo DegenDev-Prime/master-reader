@@ -295,8 +295,8 @@
     "error": "This series could not be loaded."
   },
   "audio": {
-    "emptyTitle": "No narration yet",
-    "emptyMessage": "Press Listen on any story and it will appear here.",
+    "emptyTitle": "No audio session",
+    "emptyMessage": "Open a chapter and the audio bar will stay in sync here.",
     "lastMemory": "Last position",
     "audioPosition": "Audio · part {{current}}",
     "textPosition": "Text · page {{current}} of {{total}}",
@@ -412,6 +412,8 @@
     "chapterNumber": "Chapter {{position}}",
     "rewind": "Rewind {{seconds}}",
     "forward": "Forward {{seconds}}",
+    "previousChunk": "Previous part",
+    "nextChunk": "Next part",
     "clipFailed": "Part {{part}} could not be generated and was skipped.",
     "retryClip": "Retry part"
   },

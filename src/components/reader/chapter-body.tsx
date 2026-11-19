@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useRef } from 'react';
 import {
   Linking,
   Pressable,
@@ -20,7 +20,6 @@ import { t } from '@/i18n';
 import type { ChapterBlock, InlineSpan } from '@/sources/content/parse';
 import type { ReaderSettings } from '@/services/settings';
 import { readerFontFamilies, type ReaderPalette } from '@/theme/reader';
-import { withAlpha } from '@/utils/color';
 
 type Progress = { pct: number; blockIndex: number };
 
@@ -33,12 +32,8 @@ type Props = {
   initialScrollPct: number;
   initialParagraph: number | null;
   nextTitle: string | null;
-  highlightIndex: number | null;
-  followHighlight: boolean;
   onProgress: (progress: Progress) => void;
   onBlockPress: (blockIndex: number) => void;
-  /** Long press on a block: start the voice from that paragraph. */
-  onBlockLongPress?: (blockIndex: number) => void;
   onNext: () => void;
   onBackToChapters: () => void;
   onMarkRead: () => void;
@@ -53,11 +48,8 @@ export const ChapterBody = memo(function ChapterBody({
   initialScrollPct,
   initialParagraph,
   nextTitle,
-  highlightIndex,
-  followHighlight,
   onProgress,
   onBlockPress,
-  onBlockLongPress,
   onNext,
   onBackToChapters,
   onMarkRead,
@@ -93,16 +85,6 @@ export const ChapterBody = memo(function ChapterBody({
     scrollRef.current?.scrollTo({ y, animated: false });
     restored.current = true;
   }, [initialParagraph, initialScrollPct]);
-
-  useEffect(() => {
-    if (!followHighlight || highlightIndex == null) return;
-    const offset = offsets.current[highlightIndex];
-    if (offset == null || viewportHeight.current <= 0) return;
-    scrollRef.current?.scrollTo({
-      y: Math.max(0, offset - viewportHeight.current / 3),
-      animated: true,
-    });
-  }, [followHighlight, highlightIndex]);
 
   const onScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -191,9 +173,6 @@ export const ChapterBody = memo(function ChapterBody({
         </View>
 
         {blocks.map((block, index) => {
-          const highlighted = highlightIndex === index;
-          const background = highlighted ? withAlpha(palette.link, 0.16) : undefined;
-
           if (block.kind === 'divider') {
             return (
               <View
@@ -209,7 +188,6 @@ export const ChapterBody = memo(function ChapterBody({
               <Pressable
                 key={index}
                 onPress={() => onBlockPress(index)}
-                onLongPress={onBlockLongPress ? () => onBlockLongPress(index) : undefined}
                 onLayout={(event) => onBlockLayout(index, event)}
                 style={styles.imageWrap}
               >
@@ -232,11 +210,9 @@ export const ChapterBody = memo(function ChapterBody({
                 accessibilityRole="header"
                 onLayout={(event) => onBlockLayout(index, event)}
                 onPress={onBlockPress ? () => onBlockPress(index) : undefined}
-                onLongPress={onBlockLongPress ? () => onBlockLongPress(index) : undefined}
                 style={[
                   paragraphStyle,
                   styles.heading,
-                  highlighted && { backgroundColor: background },
                   {
                     color: palette.text,
                     fontSize: fontSize + (block.level <= 2 ? 4 : 2),
@@ -256,11 +232,9 @@ export const ChapterBody = memo(function ChapterBody({
                 selectable
                 onLayout={(event) => onBlockLayout(index, event)}
                 onPress={onBlockPress ? () => onBlockPress(index) : undefined}
-                onLongPress={onBlockLongPress ? () => onBlockLongPress(index) : undefined}
                 style={[
                   paragraphStyle,
                   styles.pre,
-                  highlighted && { backgroundColor: background },
                   { color: palette.text, backgroundColor: palette.surface },
                 ]}
               >
@@ -274,7 +248,7 @@ export const ChapterBody = memo(function ChapterBody({
               <View
                 key={index}
                 onLayout={(event) => onBlockLayout(index, event)}
-                style={[styles.listRow, highlighted && { backgroundColor: background }]}
+                style={[styles.listRow]}
               >
                 <Text
                   style={[
@@ -288,7 +262,6 @@ export const ChapterBody = memo(function ChapterBody({
                 <Text
                   selectable
                   onPress={onBlockPress ? () => onBlockPress(index) : undefined}
-                  onLongPress={onBlockLongPress ? () => onBlockLongPress(index) : undefined}
                   style={[paragraphStyle, styles.listText]}
                 >
                   {renderSpans(block.spans, palette, fontFamily, fontSize, lineHeight)}
@@ -302,16 +275,11 @@ export const ChapterBody = memo(function ChapterBody({
               <View
                 key={index}
                 onLayout={(event) => onBlockLayout(index, event)}
-                style={[
-                  styles.quote,
-                  { borderLeftColor: palette.border },
-                  highlighted && { backgroundColor: background },
-                ]}
+                style={[styles.quote, { borderLeftColor: palette.border }]}
               >
                 <Text
                   selectable
                   onPress={onBlockPress ? () => onBlockPress(index) : undefined}
-                  onLongPress={onBlockLongPress ? () => onBlockLongPress(index) : undefined}
                   style={[
                     paragraphStyle,
                     styles.quoteText,
@@ -330,8 +298,7 @@ export const ChapterBody = memo(function ChapterBody({
               selectable
               onLayout={(event) => onBlockLayout(index, event)}
               onPress={onBlockPress ? () => onBlockPress(index) : undefined}
-              onLongPress={onBlockLongPress ? () => onBlockLongPress(index) : undefined}
-              style={[paragraphStyle, highlighted && { backgroundColor: background }]}
+              style={[paragraphStyle]}
             >
               {renderSpans(block.spans, palette, fontFamily, fontSize, lineHeight)}
             </Text>

@@ -43,7 +43,7 @@ import { chapterDisplayTitle } from '@/sources/content/chapter-title';
 type Filter = 'all' | 'unread' | 'downloaded';
 type Sort = 'asc' | 'desc';
 
-const ROW_HEIGHT = 56;
+const ROW_HEIGHT = 68;
 
 export default function ChaptersScreen() {
   const { sourceId, id } = useLocalSearchParams<{ sourceId: string; id: string }>();
@@ -445,14 +445,20 @@ export default function ChaptersScreen() {
               >
                 {number}
               </ThemedText>
-              <ThemedText
-                type="default"
-                themeColor={isCurrent ? 'text' : 'textSecondary'}
-                numberOfLines={1}
-                style={styles.title}
-              >
-                {chapterDisplayTitle(item.title) || t('chapters.untitled')}
-              </ThemedText>
+              <View style={styles.titleBlock}>
+                {item.volume ? (
+                  <ThemedText type="small" themeColor="textMuted" numberOfLines={1}>
+                    {item.volume}
+                  </ThemedText>
+                ) : null}
+                <ThemedText
+                  type="default"
+                  themeColor={isCurrent ? 'text' : 'textSecondary'}
+                  numberOfLines={1}
+                >
+                  {chapterDisplayTitle(item.title) || t('chapters.untitled')}
+                </ThemedText>
+              </View>
               {item.readAt != null ? (
                 <Ionicons name="checkmark" size={17} color={theme.success} />
               ) : null}
@@ -620,7 +626,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.twoHalf,
   },
   number: { width: 48, fontVariant: ['tabular-nums'] },
-  title: { flex: 1 },
+  titleBlock: { flex: 1, gap: 1 },
   empty: { alignItems: 'center', gap: Spacing.two, padding: Spacing.five },
   fab: {
     alignItems: 'center',

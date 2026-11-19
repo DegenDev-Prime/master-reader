@@ -14,8 +14,6 @@ const SECTIONS = [
   { key: 'reader', label: t('settings.reader'), path: '/settings/reader' },
   { key: 'advanced', label: t('settings.advanced'), path: '/settings/advanced' },
   { key: 'sources', label: t('settings.sources'), path: '/settings/sources' },
-  { key: 'narration', label: t('settings.narration'), path: '/settings/narration' },
-  { key: 'pronunciation', label: t('settings.pronunciation'), path: '/pronunciation' },
   { key: 'storage', label: t('settings.storage'), path: '/settings/storage' },
   { key: 'backup', label: t('settings.backup'), path: '/settings/backup' },
   { key: 'export', label: t('settings.exportStories'), path: '/export' },

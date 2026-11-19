@@ -1,18 +1,12 @@
-import { isAudioPlaying, pauseAudio, playAudioFile, setAudioRate } from '../audio-output';
 import type { ClipSynthesizer } from '../clip-worker';
-import { NarrationStoppedError, type NarratorEngine, type SpeakRequest } from '../engine';
 import { getSherpaTtsModule } from '../native/sherpa-tts';
 import { synthCacheKey, synthCachePath, synthCacheStore, synthTempFile } from '../synth-store';
-import type { VoiceInfo } from '../types';
-import { voicePackById, voicePacksForEngine } from '../voice-packs';
+import { voicePackById } from '../voice-packs';
 import { voicePackDir, voicePackStatus } from '../voice-pack-store';
 
-export type NeuralEngineDeps = {
+export type NeuralSynthesizerDeps = {
   /** Resolves the extracted voice directory for the active pack id. */
   getVoicePackId: () => string | null;
-  getLanguage: () => string | undefined;
-  getTitle: () => string;
-  getArtist: () => string;
 };
 
 type ActiveVoice = {
@@ -24,13 +18,12 @@ type ActiveVoice = {
 
 /**
  * On-device neural TTS. Synthesis is content-addressed and file-backed, so a
- * clip is generated once and every later playback is a cache hit. This module
- * only produces audio; the stack worker decides what to synthesise and the
- * narrator decides what to play.
+ * clip is generated once and every later request is a cache hit. Playback is
+ * deliberately outside this module: the stack worker only produces clips.
  */
 export function createNeuralSynthesizer(
   engineId: 'piper' | 'kokoro',
-  deps: NeuralEngineDeps,
+  deps: NeuralSynthesizerDeps,
 ): ClipSynthesizer {
   let active: ActiveVoice | null = null;
   let released = false;
@@ -102,76 +95,6 @@ export function createNeuralSynthesizer(
       await getSherpaTtsModule()
         ?.release()
         .catch(() => undefined);
-    },
-  };
-}
-
-/**
- * Legacy one-chunk-at-a-time engine. The main narrator uses the clip stack and
- * this is kept for voice previews, where a single utterance is all that plays.
- */
-export function createNeuralEngine(
-  engineId: 'piper' | 'kokoro',
-  deps: NeuralEngineDeps,
-): NarratorEngine {
-  const synthesizer = createNeuralSynthesizer(engineId, deps);
-  let generation = 0;
-  let released = false;
-
-  return {
-    id: engineId,
-
-    async listVoices(): Promise<VoiceInfo[]> {
-      const packs = voicePacksForEngine(engineId);
-      const installed: VoiceInfo[] = [];
-      for (const pack of packs) {
-        const status = await voicePackStatus(pack).catch(() => ({ state: 'missing' as const }));
-        if (status.state === 'ready') {
-          installed.push({
-            id: pack.id,
-            name: pack.name,
-            language: pack.language,
-            engine: engineId,
-          });
-        }
-      }
-      return installed;
-    },
-
-    async speak(request: SpeakRequest): Promise<void> {
-      generation += 1;
-      const mine = generation;
-      const { uri } = await synthesizer.synthesize(request.chunk.text);
-      if (released || mine !== generation) throw new NarrationStoppedError();
-      await playAudioFile(
-        uri,
-        { title: deps.getTitle(), artist: deps.getArtist() },
-        request.rate,
-        () => released || mine !== generation,
-      );
-    },
-
-    async warmup(): Promise<void> {
-      await synthesizer.warmup?.();
-    },
-
-    async setRate(rate: number): Promise<boolean> {
-      return setAudioRate(rate);
-    },
-
-    async stop(): Promise<void> {
-      generation += 1;
-      await pauseAudio();
-    },
-
-    async release(): Promise<void> {
-      released = true;
-      generation += 1;
-      await synthesizer.release?.();
-    },
-
-    async isSpeaking(): Promise<boolean> {
-      return isAudioPlaying();
     },
   };
 }

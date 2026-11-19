@@ -42,6 +42,10 @@ export type ArchivePost = {
   creatorId: string;
   service: string;
   title: string;
+  /** Collection/series parsed from the title, when it has one. */
+  collection?: string | null;
+  /** Chapter number parsed from the title, when it has one. */
+  chapterNumber?: number | null;
   /** Post body as HTML. */
   content: string | null;
   /** Short preview of the body, used in listings. */
@@ -234,6 +238,123 @@ export function parseCreator(value: unknown): ArchiveCreator | null {
   };
 }
 
+export type ArchiveTitleParts = {
+  collection: string | null;
+  chapterNumber: number | null;
+};
+
+/**
+ * Archive posts carry the series in the title. Actus, for example, publishes
+ * `Return of the Runebound Professor - Chapter 1035` and
+ * `Nightmare Realm Summoner - Chapter 491` under one creator feed.
+ */
+export function parseArchiveTitle(title: string): ArchiveTitleParts {
+  const clean = title.replace(/\s+/g, ' ').trim();
+  if (!clean) return { collection: null, chapterNumber: null };
+  if (/^(?:chapter|chapters|ch\.?|part|episode|ep|poll|announcement|update|news)\b/i.test(clean)) {
+    return { collection: null, chapterNumber: null };
+  }
+
+  const chapterWords =
+    /^(.+?)\s*[-–—:]?\s*(?:chapter|chapters|ch\.?|part|episode|ep)\s*#?\s*(\d+)(?:\s*[-–—]\s*(\d+))?\b/i.exec(
+      clean,
+    );
+  if (chapterWords) {
+    return {
+      collection: normalizeCollection(chapterWords[1]),
+      chapterNumber: Number(chapterWords[2]),
+    };
+  }
+
+  const nonChapter = /^(.+?)\s*[-–—:]\s*(?:poll|announcement|update|news)\b/i.exec(clean);
+  if (nonChapter) {
+    return { collection: normalizeCollection(nonChapter[1]), chapterNumber: null };
+  }
+
+  const trailingNumber = /^(.+?)\s*[-–—:]?\s*(\d+)(?:\s*[-–—]\s*(\d+))?\s*$/.exec(clean);
+  if (trailingNumber) {
+    return {
+      collection: normalizeCollection(trailingNumber[1]),
+      chapterNumber: Number(trailingNumber[2]),
+    };
+  }
+
+  return { collection: null, chapterNumber: null };
+}
+
+function normalizeCollection(value: string): string | null {
+  const collection = value
+    .replace(/[\s\-–—:]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return collection.length > 1 ? collection : null;
+}
+
+function collectionKey(collection: string | null): string {
+  return collection?.toLowerCase() ?? '';
+}
+
+function comparePosts(a: ArchivePost, b: ArchivePost): number {
+  const aNumber = a.chapterNumber ?? Number.MAX_SAFE_INTEGER;
+  const bNumber = b.chapterNumber ?? Number.MAX_SAFE_INTEGER;
+  if (aNumber !== bNumber) return aNumber - bNumber;
+  const aDate = a.published ?? 0;
+  const bDate = b.published ?? 0;
+  if (aDate !== bDate) return aDate - bDate;
+  return a.id.localeCompare(b.id);
+}
+
+export type OrderedArchivePost = {
+  post: ArchivePost;
+  collection: string | null;
+  /** Zero-based position within the collection. */
+  collectionIndex: number | null;
+};
+
+/**
+ * Groups by collection, sorts collection names alphabetically, and sorts
+ * chapters inside each collection by chapter number then date. Posts without
+ * a collection follow the collections in date order.
+ */
+export function orderArchivePosts(posts: readonly ArchivePost[]): OrderedArchivePost[] {
+  const groups = new Map<string, { title: string; posts: ArchivePost[] }>();
+  const loose: ArchivePost[] = [];
+
+  for (const post of posts) {
+    const parsed =
+      post.collection !== undefined
+        ? { collection: post.collection, chapterNumber: post.chapterNumber ?? null }
+        : parseArchiveTitle(post.title);
+    if (!parsed.collection) {
+      loose.push({ ...post, collection: null, chapterNumber: parsed.chapterNumber });
+      continue;
+    }
+    const key = collectionKey(parsed.collection);
+    const group = groups.get(key) ?? { title: parsed.collection, posts: [] };
+    group.posts.push({
+      ...post,
+      collection: parsed.collection,
+      chapterNumber: parsed.chapterNumber,
+    });
+    groups.set(key, group);
+  }
+
+  const ordered: OrderedArchivePost[] = [];
+  const sortedGroups = [...groups.values()].sort((a, b) => a.title.localeCompare(b.title));
+  for (const group of sortedGroups) {
+    group.posts.sort(comparePosts);
+    group.posts.forEach((post, index) => {
+      ordered.push({ post, collection: group.title, collectionIndex: index });
+    });
+  }
+
+  loose.sort(comparePosts);
+  for (const post of loose) {
+    ordered.push({ post, collection: null, collectionIndex: null });
+  }
+  return ordered;
+}
+
 export function parsePost(value: unknown): ArchivePost | null {
   if (typeof value !== 'object' || value === null) return null;
   const record = value as Record<string, unknown>;
@@ -245,13 +366,17 @@ export function parsePost(value: unknown): ArchivePost | null {
         .map(toAttachment)
         .filter((item): item is ArchiveAttachment => item !== null)
     : [];
+  const title = typeof record.title === 'string' ? decodeHtmlEntities(record.title).trim() : '';
+  const parsed = parseArchiveTitle(title);
 
   return {
     id,
     creatorId: typeof record.user === 'string' ? record.user : '',
     service: typeof record.service === 'string' ? record.service : 'unknown',
     // Titles carry entities for non-latin scripts; the reader shows plain text.
-    title: typeof record.title === 'string' ? decodeHtmlEntities(record.title).trim() : '',
+    title,
+    collection: parsed.collection,
+    chapterNumber: parsed.chapterNumber,
     content: typeof record.content === 'string' ? record.content : null,
     subtitle: typeof record.substring === 'string' ? record.substring : null,
     published: toSeconds(record.published),
@@ -292,12 +417,14 @@ export function chaptersOf(
   siteBase: string,
   creatorId: string,
 ): ChapterRef[] {
-  return postsInReadingOrder(posts).map((post, index) => ({
+  return orderArchivePosts(posts).map(({ post, collection, collectionIndex }, index) => ({
     id: post.id,
     index,
     // A post without a title is still a chapter; the reader numbers it.
     title: post.title,
     url: postUrl(siteBase, post.service, creatorId, post.id),
+    volume: collection,
+    volumeIndex: collectionIndex,
     publishedAt: post.published,
   }));
 }

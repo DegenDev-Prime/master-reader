@@ -19,11 +19,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { t } from '@/i18n';
+import { AudioNavbar } from '@/components/reader/audio-navbar';
 import { ChapterBody } from '@/components/reader/chapter-body';
 import { DisplaySheet } from '@/components/reader/display-sheet';
 import { ReaderChrome } from '@/components/reader/reader-chrome';
 import { OptionSheet } from '@/components/ui/option-sheet';
-import { NARRATION_SPEED_VALUES, nearestSpeedOption } from '@/components/ui/transport-state';
 import {
   chapterReadsRepository,
   chapterRepository,
@@ -33,16 +33,19 @@ import { libraryRepository } from '@/db/repositories/library';
 import { novelRepository } from '@/db/repositories/novels';
 import { progressRepository } from '@/db/repositories/progress';
 import type { Novel } from '@/models/novel';
-import { blockIndexForRange, chunkIndexForBlock } from '@/narration/chapter-highlight';
+
 import type { ReaderSettings } from '@/services/settings';
 import { downloadChapterRange } from '@/services/chapter-downloads';
 import { getChapterHtml, syncNovel } from '@/services/novel-catalog';
-import { sourceRangeForNarrationRange } from '@/services/pronunciation';
+
+import { chunkPages } from '@/narration/chunker';
+import { prepareAudio } from '@/services/audio-session';
 import { parseChapterBlocks, type ChapterBlock } from '@/sources/content/parse';
 import { chapterDisplayTitle } from '@/sources/content/chapter-title';
 import { chapterText } from '@/sources/content/chapter-text';
 import { useBackToParent, useOpenTarget } from '@/navigation/use-parent-back';
-import { narrationChunks, narrationPageMap, useNarrationStore } from '@/stores/narration';
+
+import { useAudioStore } from '@/stores/audio';
 import { useSettingsStore } from '@/stores/settings';
 import { readerPalettes, type ReaderPalette } from '@/theme/reader';
 
@@ -78,7 +81,6 @@ export default function ReaderScreen() {
   const [pct, setPct] = useState(0);
   const [chromeVisible, setChromeVisible] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
-  const [speedOpen, setSpeedOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -92,29 +94,6 @@ export default function ReaderScreen() {
 
   const title = novel?.title ?? meta?.title ?? '';
 
-  const narrationStatus = useNarrationStore((store) =>
-    store.sourceId === sourceId && store.storyId === novelId ? store.status : 'idle',
-  );
-  const narrationError = useNarrationStore((store) =>
-    store.sourceId === sourceId && store.storyId === novelId ? store.error : null,
-  );
-  const narrationChunkIndex = useNarrationStore((store) =>
-    store.sourceId === sourceId && store.storyId === novelId ? store.chunkIndex : -1,
-  );
-  const playNarration = useNarrationStore((store) => store.play);
-  const pauseNarration = useNarrationStore((store) => store.pause);
-  const resumeNarration = useNarrationStore((store) => store.resume);
-  const seekNarration = useNarrationStore((store) => store.seekChunk);
-  const skipNarration = useNarrationStore((store) => store.skip);
-  const setNarrationSpeed = useNarrationStore((store) => store.setSpeed);
-  const narrationSpeed = useNarrationStore((store) => store.speed);
-  const hasNarration = useNarrationStore(
-    (store) => store.sourceId === sourceId && store.storyId === novelId && store.chunkCount > 0,
-  );
-  const skipSeconds = useSettingsStore((state) => state.settings.narration.skipSeconds);
-  const listening =
-    narrationStatus === 'playing' || narrationStatus === 'paused' || narrationStatus === 'loading';
-
   useKeepAwake();
 
   const saveProgress = useCallback(
@@ -122,14 +101,6 @@ export default function ReaderScreen() {
       const current = chapterRef.current;
       if (!current || !sourceId || !novelId) return;
       if (!force && Date.now() - savedAtRef.current < 4000) return;
-      const narration = useNarrationStore.getState();
-      if (
-        narration.sourceId === sourceId &&
-        narration.storyId === novelId &&
-        (narration.status === 'playing' || narration.status === 'loading')
-      ) {
-        return;
-      }
       const progress = progressRef.current;
       savedAtRef.current = Date.now();
       dirtyRef.current = false;
@@ -193,7 +164,8 @@ export default function ReaderScreen() {
         chapterRef.current = current;
         setChapters(list);
         setMeta(current);
-        setNovel(await novelRepository.get(sourceId, novelId));
+        const book = await novelRepository.get(sourceId, novelId);
+        setNovel(book);
 
         let html = await chapterRepository.getContent(sourceId, novelId, chapterId);
         if (!html) {
@@ -228,6 +200,18 @@ export default function ReaderScreen() {
         readMarkedRef.current = current.readAt != null;
         setBlocks(parsed);
         setState('ready');
+
+        const audioText = chapterText(parsed);
+        const audioChunks = chunkPages([{ index: current.position, content: audioText.text }]);
+        void prepareAudio(audioChunks, {
+          sourceId,
+          storyId: novelId,
+          chapterId: current.id,
+          title: book?.title ?? null,
+          chapterLabel: chapterDisplayTitle(current.title) || current.title || null,
+          canPrevChapter: index > 0,
+          canNextChapter: index < list.length - 1,
+        });
 
         const next = list[index + 1];
         if (next && !next.hasContent && !offlineMode) {
@@ -402,62 +386,6 @@ export default function ReaderScreen() {
     [downloadChapter, markRead, markUnread, metaTitle, novelUrl, openChapters, title],
   );
 
-  const onListen = useCallback(() => {
-    if (!sourceId || !novelId) return;
-    if (narrationStatus === 'loading') return;
-    // Both screens drive the same session, so this is the whole rule: if the
-    // voice is already in this chapter, toggle it; if it is elsewhere in the
-    // loaded window, move it here; otherwise start a session at this chapter.
-    if (listening && meta) {
-      const all = narrationChunks();
-      const target = all.findIndex((chunk) => chunk.pageIndex === meta.position);
-      if (target >= 0) {
-        const current = all[narrationChunkIndex];
-        if (current?.pageIndex !== meta.position) {
-          void seekNarration(target);
-          return;
-        }
-        if (narrationStatus === 'playing') {
-          void pauseNarration();
-          return;
-        }
-        if (narrationStatus === 'paused') {
-          void resumeNarration();
-          return;
-        }
-      }
-    }
-    if (narrationError) {
-      Alert.alert(t('reader.listen'), narrationError);
-    }
-    // A loaded session that already finished or failed is replayed in place:
-    // rebuilding it would reload the whole window for nothing.
-    if (hasNarration && !listening) {
-      const all = narrationChunks();
-      const target = meta ? all.findIndex((chunk) => chunk.pageIndex === meta.position) : -1;
-      void seekNarration(
-        target >= 0 ? target : Math.min(narrationChunkIndex, all.length - 1),
-        true,
-      );
-      return;
-    }
-    void playNarration(sourceId, novelId, title, meta?.id ?? null);
-  }, [
-    hasNarration,
-    listening,
-    meta,
-    narrationChunkIndex,
-    narrationError,
-    narrationStatus,
-    novelId,
-    pauseNarration,
-    playNarration,
-    resumeNarration,
-    seekNarration,
-    sourceId,
-    title,
-  ]);
-
   const chapterLabel =
     meta != null
       ? t('reader.position', {
@@ -479,40 +407,42 @@ export default function ReaderScreen() {
     chapterDisplayTitle(meta?.title) ||
     (meta ? t('reader.chapterFallback', { number: meta.number ?? meta.position + 1 }) : '');
 
-  const textInfo = useMemo(() => chapterText(blocks), [blocks]);
-  // Narration reads the pronunciation-applied text; the reader shows the raw
-  // text. The narrator hands over the exact map it used, so the spoken block
-  // is highlighted without either side guessing at offsets.
-  const mappedNarration = meta ? narrationPageMap(meta.position, textInfo.text) : null;
-  const highlightIndex = useMemo(() => {
-    if (!listening || !meta || !mappedNarration) return null;
-    const chunk = narrationChunks()[narrationChunkIndex];
-    if (!chunk || chunk.pageIndex !== meta.position) return null;
-    const range = sourceRangeForNarrationRange(mappedNarration, chunk.start, chunk.end);
-    return blockIndexForRange(textInfo.spans, range);
-  }, [listening, mappedNarration, meta, narrationChunkIndex, textInfo.spans]);
+  const setAudioSession = useAudioStore((state) => state.setSession);
+  useEffect(() => {
+    if (!sourceId || !novelId) return;
+    setAudioSession({
+      sourceId,
+      storyId: novelId,
+      chapterId: meta?.id ?? chapterId,
+      title: title || null,
+      chapterLabel: chapterTitle || null,
+      canPrevChapter: previous != null,
+      canNextChapter: next != null,
+    });
+  }, [
+    chapterId,
+    chapterTitle,
+    meta?.id,
+    next,
+    novelId,
+    previous,
+    setAudioSession,
+    sourceId,
+    title,
+  ]);
 
-  // A tap anywhere asks for the controls, even while the voice is running:
-  // otherwise the chrome is unreachable exactly when it is wanted.
+  const audioChapterId = useAudioStore((state) => state.chapterId);
+  useEffect(() => {
+    if (!audioChapterId || audioChapterId === chapterId || !sourceId || !novelId) return;
+    router.replace({
+      pathname: '/reader/[sourceId]/[novelId]/[chapterId]',
+      params: { sourceId, novelId, chapterId: audioChapterId },
+    });
+  }, [audioChapterId, chapterId, novelId, sourceId]);
+
   const onBlockPress = useCallback(() => {
     setChromeVisible((visible) => !visible);
   }, []);
-
-  // Long press on a paragraph sends the voice there.
-  const onBlockLongPress = useCallback(
-    (blockIndex: number) => {
-      if (!listening || !meta || !mappedNarration) return;
-      const target = chunkIndexForBlock(
-        narrationChunks(),
-        mappedNarration,
-        textInfo.spans,
-        blockIndex,
-        meta.position,
-      );
-      if (target != null) void seekNarration(target);
-    },
-    [listening, mappedNarration, meta, seekNarration, textInfo.spans],
-  );
 
   if (state === 'loading') {
     return (
@@ -613,15 +543,14 @@ export default function ReaderScreen() {
           chapterDisplayTitle(next?.title) ||
           (next ? t('reader.chapterFallback', { number: next.number ?? next.position + 1 }) : null)
         }
-        highlightIndex={highlightIndex}
-        followHighlight={listening && narrationStatus === 'playing'}
         onProgress={onProgress}
         onBlockPress={onBlockPress}
-        onBlockLongPress={onBlockLongPress}
         onNext={onNextChapter}
         onBackToChapters={openChapters}
         onMarkRead={onMarkReadPress}
       />
+
+      <AudioNavbar palette={palette} />
 
       <ReaderChrome
         visible={chromeVisible}
@@ -631,8 +560,6 @@ export default function ReaderScreen() {
         percent={pct}
         canPrevious={previous != null}
         canNext={next != null}
-        hasSession={hasNarration}
-        playing={narrationStatus === 'playing'}
         onBack={handleBack}
         onMore={() => setMenuOpen(true)}
         onPrevious={() => goTo(previous)}
@@ -641,58 +568,8 @@ export default function ReaderScreen() {
           setChromeVisible(false);
           setDisplayOpen(true);
         }}
-        onListen={onListen}
         onNext={() => goTo(next)}
-        onRewind={() => void skipNarration(-skipSeconds)}
-        onForward={() => void skipNarration(skipSeconds)}
-        skipLabel={t('narration.skipSeconds', { count: skipSeconds })}
-        speedLabel={t('narration.speedValue', { value: narrationSpeed })}
-        onSpeed={() => setSpeedOpen(true)}
       />
-
-      {!chromeVisible && hasNarration ? (
-        <View
-          style={[
-            styles.listeningBar,
-            {
-              backgroundColor: palette.surface,
-              borderColor: palette.border,
-              bottom: insets.bottom + 24,
-            },
-          ]}
-        >
-          <Pressable
-            onPress={() => void skipNarration(-skipSeconds)}
-            style={styles.listeningAction}
-            accessibilityRole="button"
-            accessibilityLabel={t('player.rewind', { seconds: skipSeconds })}
-          >
-            <Ionicons name="play-back" size={20} color={palette.text} />
-          </Pressable>
-          <Pressable
-            onPress={onListen}
-            style={styles.listeningAction}
-            accessibilityRole="button"
-            accessibilityLabel={
-              narrationStatus === 'playing' ? t('reader.pause') : t('reader.listen')
-            }
-          >
-            <Ionicons
-              name={narrationStatus === 'playing' ? 'pause' : 'play'}
-              size={22}
-              color={palette.link}
-            />
-          </Pressable>
-          <Pressable
-            onPress={() => void skipNarration(skipSeconds)}
-            style={styles.listeningAction}
-            accessibilityRole="button"
-            accessibilityLabel={t('player.forward', { seconds: skipSeconds })}
-          >
-            <Ionicons name="play-forward" size={20} color={palette.text} />
-          </Pressable>
-        </View>
-      ) : null}
 
       <DisplaySheet
         visible={displayOpen}
@@ -700,21 +577,6 @@ export default function ReaderScreen() {
         palette={palette}
         onChange={updateReader}
         onClose={() => setDisplayOpen(false)}
-      />
-
-      <OptionSheet
-        visible={speedOpen}
-        title={t('narration.speed')}
-        value={nearestSpeedOption(narrationSpeed)}
-        options={NARRATION_SPEED_VALUES.map((value) => ({
-          value: String(value),
-          label: t('narration.speedValue', { value }),
-        }))}
-        onSelect={(value) => {
-          if (value != null) void setNarrationSpeed(Number(value));
-          setSpeedOpen(false);
-        }}
-        onClose={() => setSpeedOpen(false)}
       />
 
       <OptionSheet
@@ -799,20 +661,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   stateSecondaryLabel: { fontSize: 15, fontWeight: '500' },
-  listeningBar: {
-    alignItems: 'center',
-    alignSelf: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: 2,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    position: 'absolute',
-  },
-  listeningAction: {
-    alignItems: 'center',
-    height: 40,
-    justifyContent: 'center',
-    width: 44,
-  },
 });

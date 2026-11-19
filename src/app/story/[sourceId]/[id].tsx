@@ -531,9 +531,16 @@ export default function StoryScreen() {
                   <ThemedText type="smallBold" themeColor="textMuted" style={styles.nextNumber}>
                     {chapter.number ?? chapter.position + 1}
                   </ThemedText>
-                  <ThemedText type="default" numberOfLines={1} style={styles.nextTitle}>
-                    {chapterDisplayTitle(chapter.title) || t('chapters.untitled')}
-                  </ThemedText>
+                  <View style={styles.nextText}>
+                    {chapter.volume ? (
+                      <ThemedText type="small" themeColor="textMuted" numberOfLines={1}>
+                        {chapter.volume}
+                      </ThemedText>
+                    ) : null}
+                    <ThemedText type="default" numberOfLines={1}>
+                      {chapterDisplayTitle(chapter.title) || t('chapters.untitled')}
+                    </ThemedText>
+                  </View>
                   <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
                 </Pressable>
               ))}
@@ -656,5 +663,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.twoHalf,
   },
   nextNumber: { width: 40 },
-  nextTitle: { flex: 1 },
+  nextText: { flex: 1, gap: 1 },
 });

@@ -5,6 +5,7 @@ import {
   clipDurationMs,
   clipIndexAtMs,
   createClipStack,
+  failUnreadyClips,
   markDead,
   markPending,
   markReady,
@@ -62,6 +63,17 @@ describe('clip stack', () => {
     current = recordFailure(current, 0, 'boom');
     expect(current.clips[0]).toMatchObject({ phase: 'dead', attempts: 3 });
     expect(shouldRetry(current.clips[0].attempts)).toBe(false);
+  });
+
+  it('marks a permanent failure dead on its first attempt', () => {
+    const current = recordFailure(stack(), 0, 'voice missing', undefined, true);
+    expect(current.clips[0]).toMatchObject({ phase: 'dead', attempts: 1 });
+  });
+
+  it('fails every unready clip but keeps ready audio', () => {
+    const ready = markReady(stack(), 1, { uri: 'file:///one.wav' });
+    const failed = failUnreadyClips(ready, 'backend dead');
+    expect(failed.clips.map((clip) => clip.phase)).toEqual(['dead', 'ready', 'dead']);
   });
 
   it('does not revive ready or dead clips when marking pending', () => {

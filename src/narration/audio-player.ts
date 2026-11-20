@@ -22,6 +22,7 @@ export type AudioPlayerAdapter = {
   play(): Promise<void>;
   pause(): Promise<void>;
   seek(ms: number): Promise<void>;
+  setRate(rate: number): void;
   snapshot(): AudioPlaybackSnapshot;
   subscribe(listener: (snapshot: AudioPlaybackSnapshot) => void): () => void;
   unload(): Promise<void>;
@@ -85,6 +86,9 @@ function handleStatus(status: AudioStatus): void {
   if (status.error) settlePending(new Error(status.error));
   else if (status.isLoaded) settlePending();
   publish();
+  // expo-audio keeps didJustFinish true until the next status tick; leaving it
+  // set makes a later seek/load look like a second finish.
+  latestFinish = false;
 }
 
 function ensureAudioMode(): Promise<void> {
@@ -146,6 +150,11 @@ async function seek(ms: number): Promise<void> {
   await player.seekTo(Math.max(0, ms) / 1000);
 }
 
+function setRate(rate: number): void {
+  if (!player) return;
+  player.setPlaybackRate(Math.min(3, Math.max(0.25, rate)), 'high');
+}
+
 function subscribe(listener: (snapshot: AudioPlaybackSnapshot) => void): () => void {
   listeners.add(listener);
   return () => {
@@ -174,7 +183,16 @@ async function unload(): Promise<void> {
   publish();
 }
 
-const adapter: AudioPlayerAdapter = { load, play, pause, seek, snapshot, subscribe, unload };
+const adapter: AudioPlayerAdapter = {
+  load,
+  play,
+  pause,
+  seek,
+  setRate,
+  snapshot,
+  subscribe,
+  unload,
+};
 
 /** One process-wide player, so every caller shares the same playback and status. */
 export function createAudioPlayerAdapter(): AudioPlayerAdapter {

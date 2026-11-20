@@ -30,6 +30,7 @@ function makePlayer() {
   const calls: string[] = [];
   const loads: string[] = [];
   const seeks: number[] = [];
+  const rates: number[] = [];
 
   const notify = () => {
     for (const listener of [...listeners]) listener(status);
@@ -66,6 +67,10 @@ function makePlayer() {
       seeks.push(ms);
       set({ positionMs: ms });
     },
+    setRate(rate: number) {
+      calls.push(`rate:${rate}`);
+      rates.push(rate);
+    },
     snapshot: () => status,
     subscribe(listener) {
       listeners.add(listener);
@@ -84,6 +89,7 @@ function makePlayer() {
     calls,
     loads,
     seeks,
+    rates,
     snapshot: () => status,
     position: (ms: number) => set({ positionMs: ms }),
     finish: () => set({ playing: false, didJustFinish: true, positionMs: status.durationMs }),
@@ -100,16 +106,26 @@ function makeController(player: ReturnType<typeof makePlayer>, synth = immediate
   const states: AudioControllerState[] = [];
   const clipEvents: number[] = [];
   const saves: [number, number][] = [];
+  const protectedUris: string[][] = [];
   const controller = new AudioController({
     player: player.adapter,
     synth,
     delay: immediate,
     meta: { title: 'Story', artist: 'Master Reader' },
+    errorMessage: 'narration.error',
     onState: (state) => states.push(state),
     onClip: (index) => clipEvents.push(index),
+    onProtect: (uris) => protectedUris.push([...uris]),
     savePosition: (index, positionMs) => saves.push([index, positionMs]),
   });
-  return { controller, states, clipEvents, saves, last: () => states[states.length - 1] };
+  return {
+    controller,
+    states,
+    clipEvents,
+    saves,
+    protectedUris,
+    last: () => states[states.length - 1],
+  };
 }
 
 describe('AudioController', () => {
@@ -259,6 +275,65 @@ describe('AudioController', () => {
     expect(phases).toContain('paused');
     expect(phases.lastIndexOf('playing')).toBeGreaterThan(phases.indexOf('paused'));
     expect(phases.at(-1)).toBe('paused');
+  });
+
+  it('applies the playback rate without re-synthesizing', async () => {
+    const player = makePlayer();
+    const { controller } = makeController(player);
+
+    await controller.load(chunks);
+    await controller.whenIdle();
+    await controller.play();
+    controller.setRate(1.5);
+
+    expect(player.rates.at(-1)).toBe(1.5);
+    expect(player.loads).toHaveLength(1);
+  });
+
+  it('does not reload a clip that was preloaded while paused', async () => {
+    const player = makePlayer();
+    const { controller } = makeController(player);
+
+    await controller.load(chunks);
+    await controller.whenIdle();
+    await controller.skipForward();
+    await controller.play();
+
+    expect(player.loads).toEqual(['file:///two.wav']);
+    expect(player.snapshot().playing).toBe(true);
+  });
+
+  it('protects the playhead and its lookahead from cache eviction', async () => {
+    const player = makePlayer();
+    const { controller, protectedUris } = makeController(player);
+
+    await controller.load(chunks);
+    await controller.whenIdle();
+
+    expect(protectedUris.at(-1)).toEqual([
+      'file:///one.wav',
+      'file:///two.wav',
+      'file:///three.wav',
+    ]);
+
+    await controller.destroy();
+    expect(protectedUris.at(-1)).toEqual([]);
+  });
+
+  it('shows a localized error instead of the synth message', async () => {
+    const player = makePlayer();
+    const { controller, last } = makeController(player, {
+      synthesize: async () => {
+        throw new Error('secret native detail');
+      },
+    });
+
+    await controller.load([chunks[0]]);
+    await controller.play();
+    await controller.whenIdle();
+
+    expect(last()?.error).toBe('narration.error');
+    expect(last()?.phase).toBe('error');
   });
 
   it('stops the worker, detaches, and unloads on destroy', async () => {

@@ -43,6 +43,7 @@ import { prepareAudio } from '@/services/audio-session';
 import { parseChapterBlocks, type ChapterBlock } from '@/sources/content/parse';
 import { chapterDisplayTitle } from '@/sources/content/chapter-title';
 import { chapterText } from '@/sources/content/chapter-text';
+import { shouldFollowAudioChapter } from '@/navigation/audio-follow';
 import { useBackToParent, useOpenTarget } from '@/navigation/use-parent-back';
 
 import { useAudioStore } from '@/stores/audio';
@@ -165,6 +166,7 @@ export default function ReaderScreen() {
         setChapters(list);
         setMeta(current);
         const book = await novelRepository.get(sourceId, novelId);
+        if (cancelled) return;
         setNovel(book);
 
         let html = await chapterRepository.getContent(sourceId, novelId, chapterId);
@@ -187,6 +189,7 @@ export default function ReaderScreen() {
         }
 
         const saved = await progressRepository.get(sourceId, novelId);
+        if (cancelled) return;
         const sameChapter = saved?.chapterId === chapterId;
         setRestore({
           pct: sameChapter ? (saved?.scrollPct ?? 0) : 0,
@@ -201,6 +204,7 @@ export default function ReaderScreen() {
         setBlocks(parsed);
         setState('ready');
 
+        if (cancelled) return;
         const audioText = chapterText(parsed);
         const audioChunks = chunkPages([{ index: current.position, content: audioText.text }]);
         void prepareAudio(audioChunks, {
@@ -407,38 +411,37 @@ export default function ReaderScreen() {
     chapterDisplayTitle(meta?.title) ||
     (meta ? t('reader.chapterFallback', { number: meta.number ?? meta.position + 1 }) : '');
 
-  const setAudioSession = useAudioStore((state) => state.setSession);
-  useEffect(() => {
-    if (!sourceId || !novelId) return;
-    setAudioSession({
-      sourceId,
-      storyId: novelId,
-      chapterId: meta?.id ?? chapterId,
-      title: title || null,
-      chapterLabel: chapterTitle || null,
-      canPrevChapter: previous != null,
-      canNextChapter: next != null,
-    });
-  }, [
-    chapterId,
-    chapterTitle,
-    meta?.id,
-    next,
-    novelId,
-    previous,
-    setAudioSession,
-    sourceId,
-    title,
-  ]);
-
+  // The audio session is written by prepareAudio, which owns the chapter that
+  // is actually loaded. Writing it here too made the route and the session
+  // overwrite each other on every mount.
   const audioChapterId = useAudioStore((state) => state.chapterId);
+  const audioStoryId = useAudioStore((state) => state.storyId);
+  const audioSourceId = useAudioStore((state) => state.sourceId);
+  const seenAudioChapter = useRef(audioChapterId);
   useEffect(() => {
-    if (!audioChapterId || audioChapterId === chapterId || !sourceId || !novelId) return;
+    // Only follow a chapter change that happens while this reader is mounted.
+    // The value inherited at mount is the previous session, not a request.
+    if (
+      !shouldFollowAudioChapter({
+        sessionChapterId: audioChapterId,
+        sessionStoryId: audioStoryId,
+        sessionSourceId: audioSourceId,
+        routeChapterId: chapterId,
+        routeStoryId: novelId,
+        routeSourceId: sourceId,
+        seenChapterId: seenAudioChapter.current,
+      })
+    ) {
+      seenAudioChapter.current = audioChapterId;
+      return;
+    }
+    seenAudioChapter.current = audioChapterId;
+    if (!audioChapterId) return;
     router.replace({
       pathname: '/reader/[sourceId]/[novelId]/[chapterId]',
       params: { sourceId, novelId, chapterId: audioChapterId },
     });
-  }, [audioChapterId, chapterId, novelId, sourceId]);
+  }, [audioChapterId, audioSourceId, audioStoryId, chapterId, novelId, sourceId]);
 
   const onBlockPress = useCallback(() => {
     setChromeVisible((visible) => !visible);

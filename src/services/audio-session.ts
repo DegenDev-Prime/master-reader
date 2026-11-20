@@ -1,8 +1,15 @@
 import { createAudioPlayerAdapter } from '@/narration/audio-player';
 import { AudioController } from '@/narration/audio-controller';
+import {
+  narrationBackendKey,
+  resolveNarration,
+  type ResolvedNarration,
+} from '@/narration/backends';
 import { chunkPages, type SpeechChunk } from '@/narration/chunker';
-import { createNeuralSynthesizer } from '@/narration/engines/neural';
-import { VOICE_PACKS, voicePackById, type VoicePackDef } from '@/narration/voice-packs';
+import { getSystemTtsModule, systemTtsAvailable } from '@/narration/native/system-tts';
+import { setSynthProtectedUris, setSynthSessionActive } from '@/narration/synth-store';
+import { createNarrationSynthesizer } from '@/narration/synthesizer';
+import { VOICE_PACKS, type VoicePackDef } from '@/narration/voice-packs';
 import { voicePackStatus } from '@/narration/voice-pack-store';
 import { chapterRepository } from '@/db/repositories/chapters';
 import { chapterDisplayTitle } from '@/sources/content/chapter-title';
@@ -10,6 +17,7 @@ import { chapterText } from '@/sources/content/chapter-text';
 import { parseChapterBlocks } from '@/sources/content/parse';
 import { useAudioStore } from '@/stores/audio';
 import { useSettingsStore } from '@/stores/settings';
+import { t } from '@/i18n';
 
 import { getChapterHtml } from './novel-catalog';
 
@@ -26,22 +34,57 @@ type AudioContext = {
 let controller: AudioController | null = null;
 let controllerKey = '';
 let preparedKey = '';
+let preparingKey = '';
+let preparing: Promise<void> | null = null;
 
-async function resolveVoicePack(): Promise<VoicePackDef | null> {
-  const settings = useSettingsStore.getState().settings.narration;
-  const selected = settings.voiceId ? voicePackById(settings.voiceId) : null;
-  if (selected && (await voicePackStatus(selected)).state === 'ready') return selected;
-
+async function installedPacks(): Promise<VoicePackDef[]> {
+  const installed: VoicePackDef[] = [];
   for (const pack of VOICE_PACKS) {
-    if ((await voicePackStatus(pack)).state === 'ready') return pack;
+    if ((await voicePackStatus(pack)).state === 'ready') installed.push(pack);
   }
-  return null;
+  return installed;
+}
+
+async function resolveBackend(): Promise<ResolvedNarration | null> {
+  const narration = useSettingsStore.getState().settings.narration;
+  const module = getSystemTtsModule();
+  let systemAvailable = false;
+  let systemVoiceIds: string[] = [];
+
+  if (systemTtsAvailable() && module) {
+    systemAvailable = true;
+    if (narration.engine === 'system') {
+      // A wedged engine init must not block chapter preparation forever.
+      const result = await Promise.race([
+        module
+          .warmup()
+          .then(() => module.getVoices())
+          .then((voices) => ({ ok: true, ids: voices.map((voice) => voice.id) }))
+          .catch(async () => {
+            // Reset a failed engine so the next chapter can try it again.
+            await module.release().catch(() => undefined);
+            return { ok: false, ids: [] as string[] };
+          }),
+        new Promise<{ ok: boolean; ids: string[] }>((resolve) =>
+          setTimeout(() => resolve({ ok: true, ids: [] }), 5_000),
+        ),
+      ]);
+      systemAvailable = result.ok;
+      systemVoiceIds = result.ids;
+    }
+  }
+
+  const packs = narration.engine === 'system' && systemAvailable ? [] : await installedPacks();
+  return resolveNarration(
+    { engine: narration.engine, voiceId: narration.voiceId },
+    { systemAvailable, systemVoiceIds, installedPacks: packs },
+  );
 }
 
 async function ensureController(context: AudioContext): Promise<AudioController> {
-  const pack = await resolveVoicePack();
-  if (!pack) {
-    const error = new Error('No TTS voice pack is installed.');
+  const backend = await resolveBackend();
+  if (!backend) {
+    const message = t('narration.engineUnavailable');
     useAudioStore.getState().setPlayback({
       phase: 'error',
       clipIndex: 0,
@@ -49,23 +92,25 @@ async function ensureController(context: AudioContext): Promise<AudioController>
       positionMs: 0,
       durationMs: 0,
       bufferedAhead: 0,
-      error: error.message,
+      error: message,
     });
-    throw error;
+    throw new Error(message);
   }
 
-  const key = `${context.sourceId}:${context.storyId}:${pack.id}`;
+  const key = `${context.sourceId}:${context.storyId}:${narrationBackendKey(backend)}`;
   if (controller && controllerKey === key) return controller;
 
   if (controller) await controller.destroy().catch(() => undefined);
 
-  const synth = createNeuralSynthesizer(pack.engine, {
-    getVoicePackId: () => pack.id,
-  });
+  const synth = createNarrationSynthesizer(backend);
+  const settings = useSettingsStore.getState().settings.narration;
   controller = new AudioController({
     player: createAudioPlayerAdapter(),
     synth,
+    rate: settings.speed,
+    errorMessage: t('narration.error'),
     meta: { title: context.title ?? 'Master Reader', artist: 'Master Reader' },
+    onProtect: setSynthProtectedUris,
     onState: (state) => useAudioStore.getState().setPlayback(state),
   });
   controllerKey = key;
@@ -95,21 +140,35 @@ export async function prepareAudio(
   // second load instead of pausing the new chapter.
   const key = `${context.sourceId}:${context.storyId}:${context.chapterId}`;
   if (key === preparedKey && controller) return;
+  if (preparing && preparingKey === key) return preparing;
 
+  preparingKey = key;
+  const task = (async () => {
+    try {
+      const active = await ensureController(context);
+      await active.load(chunks, startIndex, startMs);
+      setSynthSessionActive(true);
+      preparedKey = key;
+    } catch (error) {
+      useAudioStore.getState().setPlayback({
+        phase: 'error',
+        clipIndex: startIndex,
+        clipId: null,
+        positionMs: startMs,
+        durationMs: 0,
+        bufferedAhead: 0,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })();
+  preparing = task;
   try {
-    const active = await ensureController(context);
-    await active.load(chunks, startIndex, startMs);
-    preparedKey = key;
-  } catch (error) {
-    useAudioStore.getState().setPlayback({
-      phase: 'error',
-      clipIndex: startIndex,
-      clipId: null,
-      positionMs: startMs,
-      durationMs: 0,
-      bufferedAhead: 0,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    await task;
+  } finally {
+    if (preparing === task) {
+      preparing = null;
+      preparingKey = '';
+    }
   }
 }
 
@@ -187,5 +246,15 @@ export async function destroyAudio(): Promise<void> {
   controller = null;
   controllerKey = '';
   preparedKey = '';
+  setSynthSessionActive(false);
   await active?.destroy().catch(() => undefined);
 }
+
+// Speed is playback-time, so a change applies to the loaded clip immediately.
+// A backend/voice change starts with the next prepared chapter.
+useSettingsStore.subscribe((state, previous) => {
+  const next = state.settings.narration;
+  const before = previous.settings.narration;
+  if (next.speed !== before.speed) controller?.setRate(next.speed);
+  if (next.engine !== before.engine || next.voiceId !== before.voiceId) preparedKey = '';
+});

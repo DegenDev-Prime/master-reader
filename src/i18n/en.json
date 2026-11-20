@@ -372,7 +372,9 @@
     "previewVoice": "Preview voice",
     "packDescription": "Offline neural voice, downloaded once and kept on device.",
     "manageRules": "Manage rules",
-    "previewBusy": "Previewing"
+    "previewBusy": "Previewing",
+    "voiceDefault": "Device default",
+    "nextChapterHint": "Engine and voice changes apply from the next chapter."
   },
   "author": {
     "title": "Author",

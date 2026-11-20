@@ -102,6 +102,7 @@ export function recordFailure(
   index: number,
   error: string,
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
+  permanent = false,
 ): ClipStack {
   const current = stack.clips[index];
   if (!current) return stack;
@@ -109,8 +110,21 @@ export function recordFailure(
   return withPhase(stack, index, {
     attempts,
     error,
-    phase: attempts >= policy.maxAttempts ? 'dead' : 'failed',
+    phase: permanent || attempts >= policy.maxAttempts ? 'dead' : 'failed',
   });
+}
+
+/**
+ * Circuit breaker: a dead backend fails every unready clip at once instead of
+ * synthesizing the rest of the chapter into the same error.
+ */
+export function failUnreadyClips(stack: ClipStack, error: string): ClipStack {
+  return {
+    ...stack,
+    clips: stack.clips.map((clip) =>
+      clip.phase === 'ready' || clip.phase === 'dead' ? clip : { ...clip, phase: 'dead', error },
+    ),
+  };
 }
 
 export function markDead(stack: ClipStack, index: number): ClipStack {
@@ -145,7 +159,7 @@ export function retryDelayMs(attempt: number, policy: RetryPolicy = DEFAULT_RETR
 
 /**
  * Indices the worker should fill next: the playhead first, then the clips
- * ahead of it. Ready, in-flight and dead clips are not re-queued.
+ * ahead of it. Ready, in-flight, dead and waiting-to-retry clips are skipped.
  */
 export function planPrefetch(
   stack: ClipStack,
@@ -157,7 +171,7 @@ export function planPrefetch(
   const indices: number[] = [];
   for (let index = start; index <= end; index += 1) {
     const clip = stack.clips[index];
-    if (clip.phase === 'pending' || clip.phase === 'failed') indices.push(index);
+    if (clip.phase === 'pending') indices.push(index);
   }
   return indices;
 }

@@ -22,8 +22,14 @@ export type AudioControllerOptions = {
   meta?: { title: string; artist: string };
   lookahead?: number;
   delay?: (ms: number) => Promise<void>;
+  /** Playback rate; synthesis always runs at 1x so clips stay reusable. */
+  rate?: number;
+  /** Localized message shown when synthesis or playback fails. */
+  errorMessage: string;
   onState: (state: AudioControllerState) => void;
   onClip?: (index: number) => void;
+  /** Keeps the current clip and its lookahead out of the synth cache sweep. */
+  onProtect?: (uris: readonly string[]) => void;
   savePosition?: (index: number, positionMs: number) => void;
 };
 
@@ -37,8 +43,11 @@ export class AudioController {
   private readonly player: AudioPlayerAdapter;
   private readonly meta: { title: string; artist: string };
   private readonly worker: ClipWorker;
+  private readonly lookahead: number;
+  private readonly errorMessage: string;
   private readonly onState: (state: AudioControllerState) => void;
   private readonly onClip?: (index: number) => void;
+  private readonly onProtect?: (uris: readonly string[]) => void;
   private readonly savePosition?: (index: number, positionMs: number) => void;
   private readonly unsubscribe: () => void;
 
@@ -51,6 +60,8 @@ export class AudioController {
   private error: string | null = null;
   private sessionId = 0;
   private starting: Promise<void> | null = null;
+  private loading: { index: number; session: number; promise: Promise<void> } | null = null;
+  private rate: number;
   private finishing = false;
   private skipping = false;
   private destroyed = false;
@@ -58,12 +69,16 @@ export class AudioController {
   constructor(options: AudioControllerOptions) {
     this.player = options.player;
     this.meta = options.meta ?? { title: '', artist: '' };
+    this.lookahead = Math.max(0, options.lookahead ?? 2);
+    this.rate = Math.min(3, Math.max(0.25, options.rate ?? 1));
+    this.errorMessage = options.errorMessage;
     this.onState = options.onState;
     this.onClip = options.onClip;
+    this.onProtect = options.onProtect;
     this.savePosition = options.savePosition;
     this.worker = new ClipWorker({
       synth: options.synth,
-      lookahead: options.lookahead,
+      lookahead: this.lookahead,
       delay: options.delay,
       onUpdate: (stack) => this.onWorkerUpdate(stack),
     });
@@ -91,7 +106,14 @@ export class AudioController {
 
     await this.player.pause();
     await this.player.unload().catch(() => undefined);
+    this.player.setRate(this.rate);
     this.emit();
+  }
+
+  /** Playback-time speed: it never invalidates synthesized clips. */
+  setRate(rate: number): void {
+    this.rate = Math.min(3, Math.max(0.25, rate));
+    this.player.setRate(this.rate);
   }
 
   async play(): Promise<void> {
@@ -131,12 +153,14 @@ export class AudioController {
   async destroy(): Promise<void> {
     if (this.stack) this.savePosition?.(this.clipIndex, this.positionMs);
     this.intent = 'idle';
-    this.worker.stop();
     this.unsubscribe();
+    await this.worker.release();
     this.stack = null;
+    this.loading = null;
     this.loadedClipIndex = null;
     this.positionMs = 0;
     this.error = null;
+    this.onProtect?.([]);
     this.emit();
     this.destroyed = true;
     await this.player.unload().catch(() => undefined);
@@ -176,8 +200,20 @@ export class AudioController {
     return count;
   }
 
+  private protectedUris(): string[] {
+    const stack = this.stack;
+    if (!stack) return [];
+    const uris: string[] = [];
+    for (let index = this.clipIndex; index <= this.clipIndex + this.lookahead; index += 1) {
+      const audio = stack.clips[index]?.audio;
+      if (audio) uris.push(audio.uri);
+    }
+    return uris;
+  }
+
   private emit(): void {
     if (this.destroyed) return;
+    this.onProtect?.(this.protectedUris());
     const stack = this.stack;
     const snapshot = this.player.snapshot();
     const loaded =
@@ -219,7 +255,7 @@ export class AudioController {
     if (this.loadedClipIndex === this.clipIndex && snapshot.loaded) {
       this.positionMs = Math.max(0, snapshot.positionMs);
     }
-    if (snapshot.error) this.error = snapshot.error;
+    if (snapshot.error) this.error = this.errorMessage;
     this.emit();
     const finished =
       snapshot.didJustFinish &&
@@ -266,16 +302,39 @@ export class AudioController {
   }
 
   private async preloadCurrent(): Promise<void> {
+    if (await this.ensureLoaded()) this.pendingSeekMs = 0;
+  }
+
+  /**
+   * One load per clip. Preload and play can race (skip while paused, then
+   * play); both await the same promise instead of replacing the file twice.
+   */
+  private async ensureLoaded(): Promise<boolean> {
+    if (this.loadedClipIndex === this.clipIndex) return true;
     const clip = this.currentClip();
-    if (!clip || clip.phase !== 'ready' || !clip.audio || this.loadedClipIndex === this.clipIndex) {
-      return;
-    }
+    if (!clip || clip.phase !== 'ready' || !clip.audio) return false;
+
     const session = this.sessionId;
     const index = this.clipIndex;
-    await this.player.load(clip.audio.uri, this.meta);
-    if (this.destroyed || session !== this.sessionId || index !== this.clipIndex) return;
-    this.loadedClipIndex = index;
-    this.pendingSeekMs = 0;
+    if (this.loading?.index === index && this.loading.session === session) {
+      await this.loading.promise;
+      return this.loadedClipIndex === this.clipIndex;
+    }
+
+    const uri = clip.audio.uri;
+    const promise = (async () => {
+      await this.player.load(uri, this.meta);
+      if (this.destroyed || session !== this.sessionId || index !== this.clipIndex) return;
+      this.loadedClipIndex = index;
+      this.player.setRate(this.rate);
+    })();
+    this.loading = { index, session, promise };
+    try {
+      await promise;
+    } finally {
+      if (this.loading?.promise === promise) this.loading = null;
+    }
+    return this.loadedClipIndex === this.clipIndex;
   }
 
   private skipDeadClip(): void {
@@ -287,7 +346,7 @@ export class AudioController {
       const next = nextPlayableIndex(stack, this.clipIndex + 1, 1);
       if (next == null) {
         this.intent = 'idle';
-        this.error = clip.error ?? 'The current clip failed.';
+        this.error = this.errorMessage;
         this.loadedClipIndex = null;
         return;
       }
@@ -319,15 +378,13 @@ export class AudioController {
   }
 
   private async maybeStart(): Promise<void> {
+    if (this.starting) await this.starting;
     if (this.intent !== 'playing' || this.destroyed) return;
-    if (this.starting) {
-      await this.starting;
-      return;
-    }
+    if (this.player.snapshot().playing) return;
     const session = this.sessionId;
-    const run = this.startPlayback().catch((error: unknown) => {
+    const run = this.startPlayback().catch(() => {
       if (this.destroyed || session !== this.sessionId) return;
-      this.error = error instanceof Error ? error.message : String(error);
+      this.error = this.errorMessage;
       this.emit();
     });
     this.starting = run;
@@ -339,21 +396,17 @@ export class AudioController {
   }
 
   private async startPlayback(): Promise<void> {
-    const clip = this.currentClip();
-    if (!clip || clip.phase !== 'ready' || !clip.audio) return;
     const session = this.sessionId;
     const index = this.clipIndex;
 
-    if (this.loadedClipIndex !== index) {
-      await this.player.load(clip.audio.uri, this.meta);
+    if (!(await this.ensureLoaded())) return;
+    if (this.destroyed || session !== this.sessionId || index !== this.clipIndex) return;
+
+    if (this.pendingSeekMs > 0) {
+      const seekMs = this.pendingSeekMs;
+      this.pendingSeekMs = 0;
+      await this.player.seek(seekMs);
       if (this.destroyed || session !== this.sessionId || index !== this.clipIndex) return;
-      this.loadedClipIndex = index;
-      if (this.pendingSeekMs > 0) {
-        const seekMs = this.pendingSeekMs;
-        this.pendingSeekMs = 0;
-        await this.player.seek(seekMs);
-        if (this.destroyed || session !== this.sessionId || index !== this.clipIndex) return;
-      }
     }
 
     if (this.intent !== 'playing') {

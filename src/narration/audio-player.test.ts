@@ -15,6 +15,7 @@ const { fake, listeners } = vi.hoisted(() => {
     play: vi.fn(),
     pause: vi.fn(),
     seekTo: vi.fn(async () => {}),
+    setPlaybackRate: vi.fn(),
     setActiveForLockScreen: vi.fn(),
     clearLockScreenControls: vi.fn(),
     remove: vi.fn(),
@@ -115,6 +116,34 @@ describe('audio player adapter', () => {
     expect(fake.remove).not.toHaveBeenCalled();
     expect(fake.currentTime).toBe(1.5);
     expect(adapter.snapshot()).toMatchObject({ playing: false, loaded: true, positionMs: 1500 });
+  });
+
+  it('applies the playback rate with pitch correction, clamped', async () => {
+    const adapter = createAudioPlayerAdapter();
+    await loadClip();
+
+    adapter.setRate(1.5);
+    expect(fake.setPlaybackRate).toHaveBeenLastCalledWith(1.5, 'high');
+
+    adapter.setRate(9);
+    expect(fake.setPlaybackRate).toHaveBeenLastCalledWith(3, 'high');
+  });
+
+  it('reports a finish once instead of on every status tick', async () => {
+    const adapter = createAudioPlayerAdapter();
+    await loadClip();
+    const listener = vi.fn();
+    adapter.subscribe(listener);
+
+    fake.playing = false;
+    fake.currentTime = 1;
+    emit({ didJustFinish: true, playing: false });
+
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ didJustFinish: true }));
+    expect(adapter.snapshot().didJustFinish).toBe(false);
+
+    emit({ didJustFinish: false, playing: false });
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ didJustFinish: false }));
   });
 
   it('seeks in seconds from a millisecond position', async () => {

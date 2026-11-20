@@ -1,4 +1,4 @@
-import type { ClipSynthesizer } from '../clip-worker';
+import { SynthError, type ClipSynthesizer } from '../clip-worker';
 import { getSherpaTtsModule } from '../native/sherpa-tts';
 import { synthCacheKey, synthCachePath, synthCacheStore, synthTempFile } from '../synth-store';
 import { voicePackById } from '../voice-packs';
@@ -8,6 +8,8 @@ export type NeuralSynthesizerDeps = {
   /** Resolves the extracted voice directory for the active pack id. */
   getVoicePackId: () => string | null;
 };
+
+const RELEASE_WAIT_MS = 10_000;
 
 type ActiveVoice = {
   packId: string;
@@ -42,12 +44,12 @@ export function createNeuralSynthesizer(
 
   async function ensureVoice(packId: string): Promise<ActiveVoice> {
     const module = getSherpaTtsModule();
-    if (!module) throw new Error('Neural narration is not available in this build.');
+    if (!module) throw new SynthError('Neural narration is not available in this build.', true);
     if (active && active.packId === packId) return active;
     const def = voicePackById(packId);
-    if (!def || def.engine !== engineId) throw new Error('Voice pack is not installed.');
+    if (!def || def.engine !== engineId) throw new SynthError('Voice pack is not installed.', true);
     const status = await voicePackStatus(def);
-    if (status.state !== 'ready') throw new Error('Voice pack is not installed.');
+    if (status.state !== 'ready') throw new SynthError('Voice pack is not installed.', true);
     const dir = voicePackDir(def.id);
     const { sampleRate } = await module.initVoice(engineId, dir, 2);
     active = { packId, dir, sid: def.sid ?? 0, sampleRate };
@@ -55,13 +57,13 @@ export function createNeuralSynthesizer(
   }
 
   async function synthesize(text: string): Promise<{ uri: string; durationMs: number | null }> {
-    if (released) throw new Error('The neural engine was released.');
+    if (released) throw new SynthError('The neural engine was released.', true);
     return runExclusive(async () => {
-      if (released) throw new Error('The neural engine was released.');
+      if (released) throw new SynthError('The neural engine was released.', true);
       const module = getSherpaTtsModule();
-      if (!module) throw new Error('Neural narration is not available in this build.');
+      if (!module) throw new SynthError('Neural narration is not available in this build.', true);
       const packId = deps.getVoicePackId();
-      if (!packId) throw new Error('No neural voice selected.');
+      if (!packId) throw new SynthError('No neural voice selected.', true);
       const voice = await ensureVoice(packId);
       const key = await synthCacheKey(engineId, voice.packId, text);
       const hit = await synthCachePath(key);
@@ -90,8 +92,16 @@ export function createNeuralSynthesizer(
       await ensureVoice(packId);
     },
     async release(): Promise<void> {
+      if (released) return;
       released = true;
+      // Never release the native instance under a running generate(): that is
+      // a use-after-free. If it cannot drain, the next initVoice replaces it.
+      const drained = await Promise.race([
+        queueTail.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), RELEASE_WAIT_MS)),
+      ]);
       active = null;
+      if (!drained) return;
       await getSherpaTtsModule()
         ?.release()
         .catch(() => undefined);

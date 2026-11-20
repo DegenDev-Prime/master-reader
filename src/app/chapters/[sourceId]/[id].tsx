@@ -51,6 +51,7 @@ export default function ChaptersScreen() {
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<ChapterListItem>>(null);
   const didScroll = useRef(false);
+  const filteredRef = useRef<ChapterListItem[]>([]);
 
   const [chapters, setChapters] = useState<ChapterListItem[]>([]);
   const [progress, setProgress] = useState<ReadingProgress | null>(null);
@@ -131,7 +132,11 @@ export default function ChaptersScreen() {
   const currentIndex = filtered.findIndex((chapter) => chapter.id === currentId);
 
   useEffect(() => {
-    if (didScroll.current || currentIndex < 0 || filtered.length === 0) return;
+    filteredRef.current = filtered;
+  }, [filtered]);
+
+  useEffect(() => {
+    if (didScroll.current || currentIndex < 0 || currentIndex >= filtered.length) return;
     didScroll.current = true;
     const timer = setTimeout(() => {
       listRef.current?.scrollToIndex({
@@ -269,6 +274,7 @@ export default function ChaptersScreen() {
     setSort('asc');
     const index = chapters.findIndex((chapter) => chapter.id === target.id);
     setTimeout(() => {
+      if (index < 0 || index >= filteredRef.current.length) return;
       listRef.current?.scrollToIndex({ index, viewPosition: 0.35, animated: true });
     }, 80);
   }, [jumpText, chapters]);
@@ -574,8 +580,9 @@ export default function ChaptersScreen() {
                 variant="secondary"
                 onPress={() => {
                   setJumpOpen(false);
+                  if (currentIndex < 0 || currentIndex >= filtered.length) return;
                   listRef.current?.scrollToIndex({
-                    index: Math.max(0, currentIndex),
+                    index: currentIndex,
                     viewPosition: 0.35,
                     animated: true,
                   });

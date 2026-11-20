@@ -10,6 +10,7 @@ import { Screen } from '@/components/ui/screen';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { clearSynthCache, synthCacheBytes } from '@/narration/synth-store';
+import { destroyAudio } from '@/services/audio-session';
 import { clearCaches } from '@/services/cache';
 import { useSettingsStore } from '@/stores/settings';
 import { useBackToParent } from '@/navigation/use-parent-back';
@@ -41,7 +42,8 @@ export default function StorageSettingsScreen() {
         text: t('common.clear'),
         style: 'destructive',
         onPress: () => {
-          void clearCaches().then(loadSizes);
+          // A live session owns its WAVs; stopping it is what makes the sweep safe.
+          void destroyAudio().then(clearCaches).then(loadSizes);
         },
       },
     ]);
@@ -54,7 +56,7 @@ export default function StorageSettingsScreen() {
         text: t('common.clear'),
         style: 'destructive',
         onPress: () => {
-          void clearSynthCache().then(loadSizes);
+          void destroyAudio().then(clearSynthCache).then(loadSizes);
         },
       },
     ]);

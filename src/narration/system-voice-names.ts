@@ -208,7 +208,7 @@ function engineHint(id: string): string | null {
 type PendingVoice = NormalizedSystemVoice & { variant: string | null; code: string | null };
 
 /**
- * Turns raw `expo-speech` voices (whose Android `name` is the untranslated TTS
+ * Turns raw device TTS voices (whose Android `name` is the untranslated TTS
  * identifier) into readable, de-duplicated, sorted labels. Collisions — Google
  * ships many near-identical voices per locale — are disambiguated with the
  * engine code carried in the id.

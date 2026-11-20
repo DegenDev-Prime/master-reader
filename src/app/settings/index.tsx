@@ -12,6 +12,7 @@ import { useBackToParent } from '@/navigation/use-parent-back';
 const SECTIONS = [
   { key: 'appearance', label: t('settings.appearance'), path: '/settings/appearance' },
   { key: 'reader', label: t('settings.reader'), path: '/settings/reader' },
+  { key: 'narration', label: t('settings.narration'), path: '/settings/narration' },
   { key: 'advanced', label: t('settings.advanced'), path: '/settings/advanced' },
   { key: 'sources', label: t('settings.sources'), path: '/settings/sources' },
   { key: 'storage', label: t('settings.storage'), path: '/settings/storage' },

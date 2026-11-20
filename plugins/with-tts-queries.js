@@ -10,14 +10,16 @@ module.exports = function withTtsQueries(config) {
   return withAndroidManifest(config, (result) => {
     const manifest = result.modResults.manifest;
     const queries = manifest.queries ?? [];
-    const declared = queries.some((query) =>
-      (query.intent ?? []).some((intent) =>
-        (intent.action ?? []).some((action) => action.$?.['android:name'] === TTS_ACTION),
-      ),
+    const target = queries[0] ?? {};
+    target.intent = target.intent ?? [];
+
+    const declared = target.intent.some((intent) =>
+      (intent.action ?? []).some((action) => action.$?.['android:name'] === TTS_ACTION),
     );
     if (!declared) {
-      queries.push({ intent: [{ action: [{ $: { 'android:name': TTS_ACTION } }] }] });
+      target.intent.push({ action: [{ $: { 'android:name': TTS_ACTION } }] });
     }
+    if (queries.length === 0) queries.push(target);
     manifest.queries = queries;
     return result;
   });

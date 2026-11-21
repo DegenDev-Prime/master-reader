@@ -1,6 +1,12 @@
 import { SynthError, type ClipSynthesizer } from '../clip-worker';
 import { getSherpaTtsModule } from '../native/sherpa-tts';
-import { synthCacheKey, synthCachePath, synthCacheStore, synthTempFile } from '../synth-store';
+import {
+  discardSynthTemp,
+  synthCacheKey,
+  synthCachePath,
+  synthCacheStore,
+  synthTempFile,
+} from '../synth-store';
 import { voicePackById } from '../voice-packs';
 import { voicePackDir, voicePackStatus } from '../voice-pack-store';
 
@@ -70,6 +76,7 @@ export function createNeuralSynthesizer(
       if (hit) return { uri: hit, durationMs: null };
 
       const tmp = synthTempFile(key);
+      const tempUri = tmp.uri;
       try {
         if (tmp.exists) tmp.delete();
         const result = await module.synthesize(text, voice.sid, tmp.uri);
@@ -78,8 +85,9 @@ export function createNeuralSynthesizer(
           result.sampleRate > 0 ? Math.round((result.frames / result.sampleRate) * 1000) : null;
         return { uri, durationMs };
       } finally {
-        // A failed synthesis must not leave a WAV behind in any directory.
-        if (tmp.exists) tmp.delete();
+        // synthCacheStore moves the temp file; the original path is the only
+        // thing that may still need deleting.
+        discardSynthTemp(tempUri);
       }
     });
   }

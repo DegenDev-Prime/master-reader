@@ -108,6 +108,9 @@ async function ensureController(context: AudioContext): Promise<AudioController>
     player: createAudioPlayerAdapter(),
     synth,
     rate: settings.speed,
+    // Kokoro is the slowest model; a first chunk can exceed a minute on a
+    // low-end device. The cap still prevents a wedged native call forever.
+    synthTimeoutMs: backend.engine === 'kokoro' ? 180_000 : 60_000,
     errorMessage: t('narration.error'),
     meta: { title: context.title ?? 'Master Reader', artist: 'Master Reader' },
     onProtect: setSynthProtectedUris,

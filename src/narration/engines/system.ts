@@ -1,6 +1,12 @@
 import { SynthError, type ClipSynthesizer } from '../clip-worker';
 import { getSystemTtsModule, systemTtsAvailable } from '../native/system-tts';
-import { synthCacheKey, synthCachePath, synthCacheStore, synthTempFile } from '../synth-store';
+import {
+  discardSynthTemp,
+  synthCacheKey,
+  synthCachePath,
+  synthCacheStore,
+  synthTempFile,
+} from '../synth-store';
 
 const RELEASE_WAIT_MS = 5_000;
 
@@ -45,6 +51,7 @@ export function createSystemSynthesizer(deps: SystemSynthesizerDeps): ClipSynthe
       if (hit) return { uri: hit, durationMs: null };
 
       const tmp = synthTempFile(key);
+      const tempUri = tmp.uri;
       try {
         if (tmp.exists) tmp.delete();
         await module.synthesize(text, voiceId, tmp.uri);
@@ -61,7 +68,9 @@ export function createSystemSynthesizer(deps: SystemSynthesizerDeps): ClipSynthe
           isPermanent(error),
         );
       } finally {
-        if (tmp.exists) tmp.delete();
+        // synthCacheStore moves the temp file; only the original path may
+        // still hold a failed synthesis.
+        discardSynthTemp(tempUri);
       }
     });
   }

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { discardSynthTemp } from './synth-store';
+
 const files = vi.hoisted(() => new Set<string>());
 
 vi.mock('expo-file-system', () => ({
@@ -17,8 +19,6 @@ vi.mock('expo-file-system', () => ({
 }));
 
 vi.mock('expo-crypto', () => ({}));
-
-import { discardSynthTemp } from './synth-store';
 
 describe('discardSynthTemp', () => {
   beforeEach(() => {

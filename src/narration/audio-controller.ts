@@ -24,6 +24,8 @@ export type AudioControllerOptions = {
   delay?: (ms: number) => Promise<void>;
   /** Playback rate; synthesis always runs at 1x so clips stay reusable. */
   rate?: number;
+  /** Backend-specific ceiling for one synthesis call. */
+  synthTimeoutMs?: number;
   /** Localized message shown when synthesis or playback fails. */
   errorMessage: string;
   onState: (state: AudioControllerState) => void;
@@ -80,6 +82,7 @@ export class AudioController {
       synth: options.synth,
       lookahead: this.lookahead,
       delay: options.delay,
+      synthTimeoutMs: options.synthTimeoutMs,
       onUpdate: (stack) => this.onWorkerUpdate(stack),
     });
     this.unsubscribe = this.player.subscribe((snapshot) => this.onPlayerSnapshot(snapshot));

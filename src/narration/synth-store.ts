@@ -134,6 +134,16 @@ export function synthTempFile(key: string): File {
   return new File(dir, `tmp-${cacheFileName(key)}`);
 }
 
+/**
+ * Removes a failed synthesis from its original temp path. Do not pass the
+ * `File` object itself: `move()` rewrites its URI to the cache destination,
+ * so deleting it after a successful store removes the clip the player needs.
+ */
+export function discardSynthTemp(uri: string): void {
+  const leftover = new File(uri);
+  if (leftover.exists) leftover.delete();
+}
+
 export async function synthCacheStore(key: string, sourceWav: File): Promise<string> {
   const dir = cacheDir();
   dir.create({ intermediates: true, idempotent: true });

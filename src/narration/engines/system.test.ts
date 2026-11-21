@@ -21,6 +21,12 @@ vi.mock('../synth-store', () => ({
     file.exists = false;
     return `file:///cache/${key}`;
   }),
+  discardSynthTemp: (uri: string) => {
+    if (uri === 'file:///tmp/system.wav' && file.exists) {
+      file.deleted += 1;
+      file.exists = false;
+    }
+  },
   synthTempFile: () => ({
     uri: 'file:///tmp/system.wav',
     get exists() {

@@ -28,6 +28,8 @@ export type AudioControllerOptions = {
   synthTimeoutMs?: number;
   /** Localized message shown when synthesis or playback fails. */
   errorMessage: string;
+  /** The final clip finished naturally; the session decides what plays next. */
+  onEnd?: () => void;
   onState: (state: AudioControllerState) => void;
   onClip?: (index: number) => void;
   /** Keeps the current clip and its lookahead out of the synth cache sweep. */
@@ -47,6 +49,7 @@ export class AudioController {
   private readonly worker: ClipWorker;
   private readonly lookahead: number;
   private readonly errorMessage: string;
+  private readonly onEnd?: () => void;
   private readonly onState: (state: AudioControllerState) => void;
   private readonly onClip?: (index: number) => void;
   private readonly onProtect?: (uris: readonly string[]) => void;
@@ -64,7 +67,9 @@ export class AudioController {
   private starting: Promise<void> | null = null;
   private loading: { index: number; session: number; promise: Promise<void> } | null = null;
   private rate: number;
+  private completed = false;
   private finishing = false;
+  private ending: Promise<void> | null = null;
   private skipping = false;
   private destroyed = false;
 
@@ -74,6 +79,7 @@ export class AudioController {
     this.lookahead = Math.max(0, options.lookahead ?? 2);
     this.rate = Math.min(3, Math.max(0.25, options.rate ?? 1));
     this.errorMessage = options.errorMessage;
+    this.onEnd = options.onEnd;
     this.onState = options.onState;
     this.onClip = options.onClip;
     this.onProtect = options.onProtect;
@@ -98,6 +104,11 @@ export class AudioController {
     this.positionMs = Math.max(0, Math.floor(startMs));
     this.pendingSeekMs = this.positionMs;
     this.loadedClipIndex = null;
+    this.completed = false;
+    // A load can re-enter from onEnd while the old finish is still settling.
+    this.finishing = false;
+    this.ending = null;
+    this.starting = null;
     this.sessionId += 1;
 
     this.worker.stop();
@@ -121,6 +132,11 @@ export class AudioController {
 
   async play(): Promise<void> {
     if (!this.hasClips()) return;
+    if (this.completed) {
+      // The end of a chapter is not a reason to replay its final sentence.
+      this.setCursor(0);
+      this.savePosition?.(0, 0);
+    }
     this.error = null;
     this.intent = 'playing';
     this.skipDeadClip();
@@ -172,7 +188,10 @@ export class AudioController {
   /** Resolves when synthesis has drained and any pending player load finished. */
   async whenIdle(): Promise<void> {
     await this.worker.whenIdle();
-    while (this.starting) await this.starting;
+    while (this.starting || this.ending) {
+      if (this.starting) await this.starting;
+      if (this.ending) await this.ending;
+    }
   }
 
   private hasClips(): boolean {
@@ -267,14 +286,18 @@ export class AudioController {
       this.loadedClipIndex === this.clipIndex;
     if (finished) {
       this.finishing = true;
-      void this.advance().finally(() => {
+      const run = this.advance().finally(() => {
         this.finishing = false;
+        if (this.ending === run) this.ending = null;
       });
+      this.ending = run;
+      void run;
     }
   }
 
   private setCursor(index: number): void {
     this.clipIndex = index;
+    this.completed = false;
     this.positionMs = 0;
     this.pendingSeekMs = 0;
     this.loadedClipIndex = null;
@@ -371,7 +394,14 @@ export class AudioController {
       this.loadedClipIndex = null;
       this.positionMs = finishedAt;
       this.savePosition?.(this.clipIndex, finishedAt);
+      // A dead tail is a synthesis failure, not a natural chapter end.
+      if (this.clipIndex < stack.clips.length - 1) this.error = this.errorMessage;
+      else this.completed = true;
       this.emit();
+      if (this.completed) {
+        // The session may load the next chapter synchronously; touch nothing after.
+        this.onEnd?.();
+      }
       return;
     }
     this.savePosition?.(next, 0);

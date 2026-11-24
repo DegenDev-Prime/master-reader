@@ -107,6 +107,7 @@ function makeController(player: ReturnType<typeof makePlayer>, synth = immediate
   const clipEvents: number[] = [];
   const saves: [number, number][] = [];
   const protectedUris: string[][] = [];
+  const endEvents: number[] = [];
   const controller = new AudioController({
     player: player.adapter,
     synth,
@@ -116,6 +117,7 @@ function makeController(player: ReturnType<typeof makePlayer>, synth = immediate
     onState: (state) => states.push(state),
     onClip: (index) => clipEvents.push(index),
     onProtect: (uris) => protectedUris.push([...uris]),
+    onEnd: () => endEvents.push(endEvents.length),
     savePosition: (index, positionMs) => saves.push([index, positionMs]),
   });
   return {
@@ -124,6 +126,7 @@ function makeController(player: ReturnType<typeof makePlayer>, synth = immediate
     clipEvents,
     saves,
     protectedUris,
+    endEvents,
     last: () => states[states.length - 1],
   };
 }
@@ -189,6 +192,76 @@ describe('AudioController', () => {
     expect(player.loads).toEqual(['file:///one.wav', 'file:///two.wav']);
     expect(last()).toMatchObject({ phase: 'playing', clipIndex: 1, positionMs: 0 });
     expect(saves).toContainEqual([1, 0]);
+  });
+
+  it('ends once after the final clip instead of reloading it', async () => {
+    const player = makePlayer();
+    const { controller, last, endEvents } = makeController(player);
+
+    await controller.load(chunks);
+    await controller.whenIdle();
+    await controller.play();
+
+    player.finish();
+    await controller.whenIdle();
+    player.finish();
+    await controller.whenIdle();
+    player.finish();
+    await controller.whenIdle();
+
+    expect(player.loads).toEqual(['file:///one.wav', 'file:///two.wav', 'file:///three.wav']);
+    expect(last()).toMatchObject({ phase: 'idle', clipIndex: 2 });
+    expect(endEvents).toHaveLength(1);
+
+    player.finish();
+    await Promise.resolve();
+    expect(endEvents).toHaveLength(1);
+  });
+
+  it('restarts the chapter when play is pressed after the end', async () => {
+    const player = makePlayer();
+    const { controller, last, endEvents } = makeController(player);
+
+    await controller.load(chunks);
+    await controller.whenIdle();
+    await controller.play();
+    player.finish();
+    await controller.whenIdle();
+    player.finish();
+    await controller.whenIdle();
+    player.finish();
+    await controller.whenIdle();
+
+    await controller.play();
+    await controller.whenIdle();
+
+    expect(player.loads).toEqual([
+      'file:///one.wav',
+      'file:///two.wav',
+      'file:///three.wav',
+      'file:///one.wav',
+    ]);
+    expect(last()).toMatchObject({ phase: 'playing', clipIndex: 0 });
+    expect(endEvents).toHaveLength(1);
+  });
+
+  it('does not end a chapter while paused during the final clip', async () => {
+    const player = makePlayer();
+    const { controller, endEvents } = makeController(player);
+
+    await controller.load(chunks);
+    await controller.whenIdle();
+    await controller.play();
+    player.finish();
+    await controller.whenIdle();
+    player.finish();
+    await controller.whenIdle();
+    await controller.pause();
+
+    player.finish();
+    await Promise.resolve();
+
+    expect(endEvents).toHaveLength(0);
   });
 
   it('skips forward to the next ready clip immediately', async () => {

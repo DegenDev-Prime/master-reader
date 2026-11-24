@@ -100,7 +100,12 @@ describe('clip stack', () => {
     expect(nextPlayableIndex(current, 0)).toBe(0);
     expect(nextPlayableIndex(current, 1)).toBeNull();
     expect(nextPlayableIndex(current, 2, -1)).toBe(0);
-    expect(nextPlayableIndex(current, 3, -1)).toBe(0);
+  });
+
+  it('treats a forward request past the last clip as the end', () => {
+    const current = stack();
+    expect(nextPlayableIndex(current, current.clips.length, 1)).toBeNull();
+    expect(nextPlayableIndex(current, current.clips.length, -1)).toBe(current.clips.length - 1);
   });
 });
 

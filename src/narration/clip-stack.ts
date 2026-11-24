@@ -183,7 +183,11 @@ export function nextPlayableIndex(
   direction: 1 | -1 = 1,
 ): number | null {
   if (stack.clips.length === 0) return null;
-  let index = Math.min(Math.max(0, Math.floor(from)), stack.clips.length - 1);
+  const last = stack.clips.length - 1;
+  // Asking for the clip after the last one is an end, not a wrap back onto
+  // the clip that just finished. Backward seeks may still start past the end.
+  if (direction === 1 && from > last) return null;
+  let index = Math.min(Math.max(0, Math.floor(from)), last);
   while (index >= 0 && index < stack.clips.length) {
     if (stack.clips[index].phase !== 'dead') return index;
     index += direction;

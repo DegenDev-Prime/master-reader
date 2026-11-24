@@ -35,7 +35,9 @@ let controller: AudioController | null = null;
 let controllerKey = '';
 let preparedKey = '';
 let preparingKey = '';
-let preparing: Promise<void> | null = null;
+let preparing: Promise<boolean> | null = null;
+let chapterRequest = 0;
+let advancing = false;
 
 async function installedPacks(): Promise<VoicePackDef[]> {
   const installed: VoicePackDef[] = [];
@@ -112,6 +114,7 @@ async function ensureController(context: AudioContext): Promise<AudioController>
     // low-end device. The cap still prevents a wedged native call forever.
     synthTimeoutMs: backend.engine === 'kokoro' ? 180_000 : 60_000,
     errorMessage: t('narration.error'),
+    onEnd: onChapterEnd,
     meta: { title: context.title ?? 'Master Reader', artist: 'Master Reader' },
     onProtect: setSynthProtectedUris,
     onState: (state) => useAudioStore.getState().setPlayback(state),
@@ -126,7 +129,7 @@ export async function prepareAudio(
   context: AudioContext,
   startIndex = 0,
   startMs = 0,
-): Promise<void> {
+): Promise<boolean> {
   useAudioStore.getState().setSession({
     sourceId: context.sourceId,
     storyId: context.storyId,
@@ -136,22 +139,23 @@ export async function prepareAudio(
     canPrevChapter: context.canPrevChapter,
     canNextChapter: context.canNextChapter,
   });
-  if (chunks.length === 0) return;
+  if (chunks.length === 0) return false;
 
   // Audio-driven chapter navigation prepares the target first; the reader's
   // route change then calls prepareAudio for the same chapter, so skip that
   // second load instead of pausing the new chapter.
   const key = `${context.sourceId}:${context.storyId}:${context.chapterId}`;
-  if (key === preparedKey && controller) return;
+  if (key === preparedKey && controller) return true;
   if (preparing && preparingKey === key) return preparing;
 
   preparingKey = key;
-  const task = (async () => {
+  const task = (async (): Promise<boolean> => {
     try {
       const active = await ensureController(context);
       await active.load(chunks, startIndex, startMs);
       setSynthSessionActive(true);
       preparedKey = key;
+      return true;
     } catch (error) {
       useAudioStore.getState().setPlayback({
         phase: 'error',
@@ -162,11 +166,12 @@ export async function prepareAudio(
         bufferedAhead: 0,
         error: error instanceof Error ? error.message : String(error),
       });
+      return false;
     }
   })();
   preparing = task;
   try {
-    await task;
+    return await task;
   } finally {
     if (preparing === task) {
       preparing = null;
@@ -179,30 +184,37 @@ export async function prepareAudio(
  * Moves the audio session to the next/previous chapter. The reader follows the
  * shared chapter id; the Audio tab can move chapters without a reader mounted.
  */
-export async function changeAudioChapter(direction: 1 | -1): Promise<void> {
+export async function changeAudioChapter(
+  direction: 1 | -1,
+  options: { autoplay?: boolean } = {},
+): Promise<boolean> {
+  const request = ++chapterRequest;
   const state = useAudioStore.getState();
   const { sourceId, storyId, chapterId } = state;
-  if (!sourceId || !storyId || !chapterId) return;
+  if (!sourceId || !storyId || !chapterId) return false;
 
   try {
     const chapters = await chapterRepository.listMetadata(sourceId, storyId);
     const index = chapters.findIndex((chapter) => chapter.id === chapterId);
-    if (index < 0) return;
+    if (index < 0) return false;
 
     const targetIndex = index + direction;
     const target = chapters[targetIndex];
-    if (!target) return;
+    if (!target) return false;
 
     let html = await chapterRepository.getContent(sourceId, storyId, target.id);
     if (!html) html = await getChapterHtml(sourceId, storyId, target.id);
-    if (!html) return;
+    if (!html) return false;
 
     const blocks = parseChapterBlocks(html);
     const text = chapterText(blocks).text;
     const chunks = chunkPages([{ index: target.position, content: text }]);
-    const wasPlaying = state.phase === 'playing' || state.phase === 'loading';
+    const shouldPlay = options.autoplay ?? (state.phase === 'playing' || state.phase === 'loading');
 
-    await prepareAudio(
+    // A pause, skip or manual chapter change during the fetch wins.
+    if (request !== chapterRequest) return false;
+
+    const loaded = await prepareAudio(
       chunks,
       {
         sourceId,
@@ -217,7 +229,8 @@ export async function changeAudioChapter(direction: 1 | -1): Promise<void> {
       0,
     );
 
-    if (wasPlaying) await toggleAudio();
+    if (loaded && shouldPlay && request === chapterRequest) await controller?.play();
+    return loaded;
   } catch (error) {
     useAudioStore.getState().setPlayback({
       phase: 'error',
@@ -228,23 +241,36 @@ export async function changeAudioChapter(direction: 1 | -1): Promise<void> {
       bufferedAhead: 0,
       error: error instanceof Error ? error.message : String(error),
     });
+    return false;
   }
+}
+
+/** The clip stack ended; advance exactly once unless the user takes over. */
+function onChapterEnd(): void {
+  if (advancing) return;
+  advancing = true;
+  void changeAudioChapter(1, { autoplay: true }).finally(() => {
+    advancing = false;
+  });
 }
 
 /** Single play/pause entry point used by every audio bar. */
 export async function toggleAudio(): Promise<void> {
+  chapterRequest += 1;
   if (!controller) return;
   await controller.toggle();
 }
 
 /** Skip exactly one clip in the active stack. */
 export async function skipAudio(direction: 'forward' | 'backward'): Promise<void> {
+  chapterRequest += 1;
   if (!controller) return;
   if (direction === 'forward') await controller.skipForward();
   else await controller.skipBackward();
 }
 
 export async function destroyAudio(): Promise<void> {
+  chapterRequest += 1;
   const active = controller;
   controller = null;
   controllerKey = '';
